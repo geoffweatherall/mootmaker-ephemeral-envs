@@ -3,7 +3,8 @@
 The overall cross-repo strategy (environments, the approach to reading Cognito's emails in tests,
 and how "vibe coding" shapes all of this) is recorded in
 [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md).
-This document covers what's specific to this repo. Nothing here is built yet — this is the plan.
+This document covers what's specific to this repo. The ephemeral-environment scripts are built and
+tested; everything else here is still the plan.
 
 ## Purpose
 
@@ -37,21 +38,59 @@ deciding what actually belongs in this layer versus the faster ones elsewhere.
 - **Full-stack test suite**: Playwright, driving a real browser against the deployed webapp's real
   URL — likely a small, curated set of scenarios (not a re-run of everything the mocked-API layer
   in mootmaker-webapp already covers), focused on what only this layer can catch.
-- **Real email reading (Option 2 — SES → SQS)**: a subdomain's MX record points at Amazon SES; an
-  SES receipt rule delivers incoming mail to an SQS queue; the test suite long-polls the queue and
-  parses the verification code out of the real email body. Used only for the small number of tests
-  whose specific purpose is proving Cognito's email sending actually works — everywhere else,
-  tests use the DynamoDB-bypass approach from mootmaker-api instead (see
-  [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#reading-cognitos-emails-in-tests)).
-  This infrastructure is stood up only alongside the ephemeral environments used for e2e runs —
-  never for `test` or `production`.
-- **Ephemeral environment scripts**: see [below](#ephemeral-environment-scripts).
+- **Real email reading (Option 2 — SES → SNS → SQS)**: see
+  [below](#real-email-reading-option-2--sessnssqs).
+- **Ephemeral environment scripts**: see [below](#ephemeral-environment-scripts). Built and tested
+  2026-08-15.
+
+## Real email reading (Option 2 — SES → SNS → SQS)
+
+This repo owns the receipt rule, SNS topic, and SQS queue (the domain identity and MX record live
+in [mootmaker-domain](https://github.com/geoffweatherall/mootmaker-domain) instead — see
+[mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#reading-cognitos-emails-in-tests)
+for the full design, including why this is **one persistent, shared pipeline** rather than
+something created per ephemeral environment). The test suite long-polls the queue and parses the
+verification code out of the real email body, filtering by a unique address tag per run. Used
+only for the small number of tests whose specific purpose is proving Cognito's email sending
+actually works — everywhere else, tests use the DynamoDB-bypass approach from mootmaker-api
+instead.
+
+Written 2026-08-15: `deploy/terraform/` here has the receipt rule set/rule, SNS topic (with a
+policy letting the SES rule publish to it), and SQS queue (subscribed to the topic, raw delivery
+enabled), plus `deploy-email-infra.sh`/`undeploy-email-infra.sh` at the repo root, matching
+mootmaker-domain's no-environment-argument pattern (see "No environment argument" below). The
+domain identity is referenced via `data "aws_ses_domain_identity"` rather than a remote-state
+read, mirroring how mootmaker-api/mootmaker-webapp already find mootmaker-domain's hosted zone.
+
+**Blocked as of 2026-08-15**: `ses`, `sns`, and `sqs` aren't on this account's Service Control
+Policy allow-list (`mootmaker-bootstrap-aws-accounts`). `terraform validate` passes in both
+`mootmaker-e2e/deploy/terraform/` and `mootmaker-domain/deploy/terraform/`; `terraform plan`/`apply`
+would fail against the SCP (even `plan` needs live SES describe calls) and were deliberately not
+run. Every file involved has a top-of-file comment marking it pending. **Do not run
+`deploy-email-infra.sh`** (or mootmaker-domain's `deploy.sh` for its `ses.tf` piece) until the
+allow-list is updated — that update is a human decision, not something Claude makes.
+
+### No environment argument
+
+Unlike `create-ephemeral-env.sh`'s pipeline, this Terraform takes no environment name — deployed
+once and left running, like mootmaker-domain's hosted zone. Reasoning (see also
+`deploy/terraform/backend.hcl`'s and `ses.tf`'s comments):
+
+- SES allows only one *active* receipt rule set per region/account, so a fresh rule set per
+  ephemeral e2e run would mean concurrent runs fighting over which one is active.
+- Concurrency is instead handled at the message level: each e2e run sends to a uniquely-tagged
+  address under the shared subdomain and filters the SQS queue for its own tag.
+- A fixed backend state key (`mootmaker-e2e-email/terraform.tfstate`, not
+  `<environment>/mootmaker-e2e/terraform.tfstate`) also means `cleanup-stale-envs.sh`'s discovery
+  logic — which groups by first path segment and matches only `claude-*`/`e2e-*` — never mistakes
+  this persistent infrastructure for a stale ephemeral environment.
 
 ## Ephemeral environment scripts
 
 Decided 2026-08-15 (see [mootmaker/testing-strategy.md's Ephemeral environment
 lifecycle](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#ephemeral-environment-lifecycle)
-for how this fits the overall policy). Not yet built — this is the design.
+for how this fits the overall policy). **Built and tested against real AWS environments,
+2026-08-15.**
 
 Three separate bash scripts, matching the one-script-one-job convention already used by
 `deploy.sh`/`undeploy.sh`/`authenticate.sh`/`verify.sh` elsewhere in the project. Bash rather than
@@ -59,11 +98,15 @@ a Node/TS tool, chiefly for consistency with every other operational script in t
 because all three mostly need to shell out to mootmaker-api's and mootmaker-webapp's existing
 `deploy.sh`/`undeploy.sh` rather than reimplement any deploy mechanics themselves.
 
-- **`create-ephemeral-env.sh [claude|e2e]`**: generates a name
+- **`create-ephemeral-env.sh [claude|e2e]`** (default `claude`): generates a name
   (`claude-<YYMMDD>-<HHmm>-<rand4>` or `e2e-<YYMMDD>-<HHmm>-<rand4>`, see the naming convention in
   the overall strategy doc), then calls `mootmaker-api/deploy.sh <name>` followed by
-  `mootmaker-webapp/deploy.sh <name>`, and — for `e2e`-flavoured environments — this repo's own
-  SES/SQS infrastructure apply. Prints the generated name.
+  `mootmaker-webapp/deploy.sh <name>` (sibling checkouts, resolved relative to this script's own
+  location rather than the caller's working directory). Prints the generated name as the last line
+  of stdout on success; on failure, prints the (possibly partially-deployed) name and the
+  `teardown-ephemeral-env.sh` command to clean it up. Does **not** touch the SES/SNS/SQS pipeline —
+  that's a separate, persistent, always-on piece of infrastructure (see above), not something
+  created per environment.
 
   This script does **not** need to pass any flag for the Option 1 email bypass: `mootmaker-api/deploy.sh`
   determines that entirely from the environment name it's given — `claude-*`/`e2e-*` self-enables
@@ -72,16 +115,64 @@ because all three mostly need to shell out to mootmaker-api's and mootmaker-weba
   for where that detection lives.
 
 - **`teardown-ephemeral-env.sh <name>`**: tears down one specific, already-known environment —
-  calls `undeploy.sh <name>` for mootmaker-webapp and mootmaker-api (and this repo's own infra, if
-  present for that name). This is what Claude's commit-time cleanup prompt (see the overall
-  strategy doc) uses once the user confirms.
+  calls `undeploy.sh <name>` for mootmaker-webapp then mootmaker-api. Refuses to run unless `name`
+  matches `^(claude|e2e)-[0-9]{6}-[0-9]{4}-[a-z0-9]{4}$` exactly — a hard safety rail so a typo can
+  never reach `test`/`production`. This is what Claude's commit-time cleanup prompt (see the
+  overall strategy doc) uses once the user confirms.
 
 - **`cleanup-stale-envs.sh`**: the batch sweep, for anything left behind by an interrupted session
-  or a failed run. Discovers every `claude-*`/`e2e-*` environment across all projects by listing
-  the shared Terraform state bucket's object keys and grouping by the first path segment of
-  `<environment>/<project-name>/terraform.tfstate` — no separate environment registry needed.
-  Lists everything it finds and asks for confirmation before tearing down each one, matching
+  or a failed run. Computes the shared state bucket name as `remote-state-<account-id>` (via `aws
+  sts get-caller-identity`, matching mootmaker-bootstrap-terraform's own naming convention — no
+  dependency on any sibling repo's `backend.hcl`), lists its object keys, and groups by the first
+  path segment of `<environment>/<project-name>/terraform.tfstate` — no separate environment
+  registry needed. Lists everything it finds and asks for confirmation before tearing down each
+  one (via `teardown-ephemeral-env.sh`, so the same name-format safety rail applies), matching
   `undeploy.sh`'s own always-interactive, no-`-auto-approve` safety pattern — rather than an age
   threshold or a pick-list menu, since this script can destroy multiple environments in one run
   and explicit per-environment confirmation felt like the safer default than any automatic
   selection rule. Runnable by Geoff directly, or by Claude.
+
+### Testing notes (2026-08-15)
+
+All three scripts were exercised repeatedly against real AWS (multiple `claude-*`/`e2e-*`
+environments created and torn down; `cleanup-stale-envs.sh` run against a real environment and
+correctly discovered/listed it before tearing it down on confirmation). See the session's own
+report for exact command output and current status of the two findings below.
+
+Two mootmaker-api-side issues turned up during this testing (both are findings *about*
+mootmaker-api, not bugs in these scripts — recorded here because they currently affect what
+running these scripts actually does):
+
+1. **`claude-*` names overflow a Lambda function-name limit.**
+   `${environment}-mootmaker-post-confirmation-create-person` is 65 characters for any
+   `claude-<YYMMDD>-<HHmm>-<rand4>` name (Lambda's limit is 64) but only 62 for the
+   3-characters-shorter `e2e-<YYMMDD>-<HHmm>-<rand4>` form — so `create-ephemeral-env.sh claude`
+   (the default, and what Claude's own dev-session environments use) currently fails partway
+   through every time on this one resource, while the `e2e` form gets past it. Tracked in
+   mootmaker-api's `deploy/terraform/lambda.tf`, not fixed here.
+2. **Every ephemeral environment currently fails to fully deploy**, `e2e-*` included, because
+   mootmaker-api's new email verification-code bypass (`is_ephemeral` in
+   `deploy/terraform/locals.tf`) unconditionally requires creating a customer-managed KMS key for
+   any `claude-*`/`e2e-*` environment name, and `kms:CreateKey` is denied (both by IAM and by the
+   same account-wide SCP blocking `ses`/`sns`/`sqs` above). This is a different, wider-reaching
+   instance of the same "written but not applied, pending an SCP update" situation as this
+   session's own SES/SNS/SQS work - except unlike that work (additive, opt-in), the KMS
+   requirement sits on the path every ephemeral deploy already goes through, so it currently blocks
+   `create-ephemeral-env.sh` from ever reaching a fully-working webapp for **any** name. Tracked in
+   mootmaker-api, not fixed here.
+
+Net effect: these scripts' own mechanics (name generation, calling `deploy.sh`/`undeploy.sh` in the
+right order and directories, the safety-rail regex, partial-failure cleanup messaging, and
+`cleanup-stale-envs.sh`'s discovery/listing) are verified working via multiple real create/fail/
+teardown cycles, including teardown correctly cleaning up partially-created resources. A
+full success all the way through a curled webapp URL was **not** achieved this session, blocked
+entirely by finding 2 above - re-verify that once the SCP/IAM update lands.
+
+One more behaviour worth knowing about `cleanup-stale-envs.sh`: `terraform destroy` empties a
+state file's contents but doesn't delete the S3 object itself, so a fully-torn-down environment's
+`<environment>/<project-name>/terraform.tfstate` key can still exist (now empty) after
+`teardown-ephemeral-env.sh` has run - `cleanup-stale-envs.sh` will keep listing that environment
+name until the object itself is deleted from the state bucket (`aws s3api delete-object`). Running
+`teardown-ephemeral-env.sh`/the destroy step again against an already-empty state is a safe no-op
+(Terraform reports "No changes. No objects need to be destroyed." and exits without a
+confirmation prompt), so re-confirming a phantom entry costs nothing beyond the prompt itself.

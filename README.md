@@ -23,5 +23,18 @@ expected to eventually cover.
 
 ## Status
 
-This repo is newly created and doesn't contain any code yet — see
-[testing-strategy.md](testing-strategy.md) for what's planned.
+The three ephemeral-environment lifecycle scripts (`create-ephemeral-env.sh`,
+`teardown-ephemeral-env.sh`, `cleanup-stale-envs.sh`) are built and tested
+against real AWS environments — see
+[testing-strategy.md](testing-strategy.md#ephemeral-environment-scripts) for
+detail.
+
+The real-email SES→SNS→SQS Terraform (`deploy/terraform/`, plus the matching
+piece in [mootmaker-domain](https://github.com/geoffweatherall/mootmaker-domain))
+is written and passes `terraform validate`, but deliberately not applied —
+blocked on an account Service Control Policy update. See
+[testing-strategy.md](testing-strategy.md#real-email-reading-option-2--sessnssqs)
+for detail.
+
+The Playwright full-stack test suite itself doesn't exist yet — see
+[testing-strategy.md](testing-strategy.md) for the plan.
