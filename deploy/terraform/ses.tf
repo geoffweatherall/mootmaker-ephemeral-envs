@@ -1,7 +1,5 @@
-# PENDING - WRITTEN BUT NOT APPLIED (as of 2026-08-15). See versions.tf's
-# top comment: "ses", "sns", and "sqs" aren't yet on this account's Service
-# Control Policy allow-list, so nothing in this directory has been run
-# against real AWS. `terraform validate` passes.
+# Deployed 2026-08-15, once the account's SCP allow-list was updated to
+# include ses/sns/sqs.
 #
 # The receipt rule set/rule, SNS topic, and SQS queue that implement Option
 # 2 (real email reading) from mootmaker/testing-strategy.md

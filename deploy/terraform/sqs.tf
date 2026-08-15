@@ -1,6 +1,3 @@
-# PENDING - see ses.tf's top comment: not applied until "sqs" is on the SCP
-# allow-list.
-#
 # 14-day retention (SQS's maximum) gives generous headroom for a test run
 # that's slow to poll or a debugging session days later, without needing any
 # other durability mechanism - this queue is disposable/replaceable, not a

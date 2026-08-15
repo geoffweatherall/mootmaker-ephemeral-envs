@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# PENDING - DO NOT RUN YET (as of 2026-08-15). See deploy/terraform/ses.tf's
-# top comment: "ses"/"sns"/"sqs" aren't yet on this account's Service
-# Control Policy allow-list, so this would fail at `terraform plan` already,
-# before ever reaching `apply`. Written now so the script exists once that
-# allow-list is updated - a human decision, not Claude's to make.
-#
 # Deploys the SES receipt rule set, SNS topic, and SQS queue that implement
 # real-email reading for mootmaker-e2e (see testing-strategy.md
 # #reading-cognitos-emails-in-tests). Unlike every other mootmaker-* project,

@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# PENDING - see deploy-email-infra.sh: not meaningful to run until that has
-# actually been deployed (which itself is blocked on the SCP allow-list -
-# see deploy/terraform/ses.tf).
-#
 # Destroys the SES receipt rule set, SNS topic, and SQS queue created by
 # deploy-email-infra.sh.
 #

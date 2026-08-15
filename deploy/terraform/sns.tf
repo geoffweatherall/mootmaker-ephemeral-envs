@@ -1,5 +1,3 @@
-# PENDING - see ses.tf's top comment: not applied until "sns" is on the SCP
-# allow-list.
 data "aws_caller_identity" "current" {}
 
 resource "aws_sns_topic" "inbound_email" {

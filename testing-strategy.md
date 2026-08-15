@@ -4,7 +4,8 @@ The overall cross-repo strategy (environments, the approach to reading Cognito's
 and how "vibe coding" shapes all of this) is recorded in
 [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md).
 This document covers what's specific to this repo. The ephemeral-environment scripts are built and
-tested; everything else here is still the plan.
+tested, and the SES/SNS/SQS email-reading pipeline is deployed; the full-stack test suite itself is
+still the plan.
 
 ## Purpose
 
@@ -55,20 +56,18 @@ only for the small number of tests whose specific purpose is proving Cognito's e
 actually works — everywhere else, tests use the DynamoDB-bypass approach from mootmaker-api
 instead.
 
-Written 2026-08-15: `deploy/terraform/` here has the receipt rule set/rule, SNS topic (with a
+**Deployed 2026-08-15**: `deploy/terraform/` here has the receipt rule set/rule, SNS topic (with a
 policy letting the SES rule publish to it), and SQS queue (subscribed to the topic, raw delivery
 enabled), plus `deploy-email-infra.sh`/`undeploy-email-infra.sh` at the repo root, matching
 mootmaker-domain's no-environment-argument pattern (see "No environment argument" below). The
 domain identity is referenced via `data "aws_ses_domain_identity"` rather than a remote-state
 read, mirroring how mootmaker-api/mootmaker-webapp already find mootmaker-domain's hosted zone.
 
-**Blocked as of 2026-08-15**: `ses`, `sns`, and `sqs` aren't on this account's Service Control
-Policy allow-list (`mootmaker-bootstrap-aws-accounts`). `terraform validate` passes in both
-`mootmaker-e2e/deploy/terraform/` and `mootmaker-domain/deploy/terraform/`; `terraform plan`/`apply`
-would fail against the SCP (even `plan` needs live SES describe calls) and were deliberately not
-run. Every file involved has a top-of-file comment marking it pending. **Do not run
-`deploy-email-infra.sh`** (or mootmaker-domain's `deploy.sh` for its `ses.tf` piece) until the
-allow-list is updated — that update is a human decision, not something Claude makes.
+The account's SCP allow-list was updated to include `ses`/`sns`/`sqs` (2026-08-15), mootmaker-domain's
+SES domain identity for `mail.mootmaker.com` was deployed and verified first, then this pipeline
+was deployed on top of it — `aws_ses_active_receipt_rule_set.e2e` is live, so `mail.mootmaker.com`
+genuinely receives mail into `sqs_queue_url` now. Not yet exercised end-to-end with a real message
+(that's the next piece of work — the full-stack test suite's own email-reading logic, see below).
 
 ### No environment argument
 
