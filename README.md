@@ -15,7 +15,7 @@ flows — the things neither repo's own test suite can see on its own. See
 for how this fits the wider strategy across all three repos.
 
 This repo also owns the supporting infrastructure that exists purely for testing purposes and
-doesn't belong in the API's or webapp's own deployments — currently, the SES→SQS email-reading
+doesn't belong in the API's or webapp's own deployments — currently, the SES→SNS→SQS email-reading
 path described in [testing-strategy.md](testing-strategy.md).
 
 See [use-cases.md](use-cases.md) for the starting list of user-focused scenarios these tests are
@@ -29,12 +29,15 @@ against real AWS environments — see
 [testing-strategy.md](testing-strategy.md#ephemeral-environment-scripts) for
 detail.
 
-The real-email SES→SNS→SQS Terraform (`deploy/terraform/`, plus the matching
-piece in [mootmaker-domain](https://github.com/geoffweatherall/mootmaker-domain))
-is written and passes `terraform validate`, but deliberately not applied —
-blocked on an account Service Control Policy update. See
+The real-email SES→SNS→SQS pipeline (`deploy/terraform/`, plus the matching
+domain identity in [mootmaker-domain](https://github.com/geoffweatherall/mootmaker-domain))
+is deployed and live — `mail.mootmaker.com` genuinely receives mail into this
+project's SQS queue. See
 [testing-strategy.md](testing-strategy.md#real-email-reading-option-2--sessnssqs)
 for detail.
 
-The Playwright full-stack test suite itself doesn't exist yet — see
-[testing-strategy.md](testing-strategy.md) for the plan.
+The Playwright full-stack test suite (`tests/`, run via
+`./run-full-stack-tests.sh`) covers a real sign-up, a real password reset
+(both with a real emailed code), and a deployed-site smoke check — see
+[testing-strategy.md](testing-strategy.md#full-stack-test-suite) for detail
+and current verification status.

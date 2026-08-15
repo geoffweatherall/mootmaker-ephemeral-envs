@@ -36,13 +36,62 @@ deciding what actually belongs in this layer versus the faster ones elsewhere.
   the full-stack suite against it, then tear it down. Environment names follow the
   `e2e-<YYMMDD>-<rand4>` convention (see
   [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#environments)).
-- **Full-stack test suite**: Playwright, driving a real browser against the deployed webapp's real
-  URL — likely a small, curated set of scenarios (not a re-run of everything the mocked-API layer
-  in mootmaker-webapp already covers), focused on what only this layer can catch.
+- **Full-stack test suite**: see [below](#full-stack-test-suite).
 - **Real email reading (Option 2 — SES → SNS → SQS)**: see
   [below](#real-email-reading-option-2--sessnssqs).
 - **Ephemeral environment scripts**: see [below](#ephemeral-environment-scripts). Built and tested
   2026-08-15.
+
+## Full-stack test suite
+
+Built 2026-08-15. Node/TypeScript (`package.json`, `tsconfig.json`), Playwright, three scenarios in
+`tests/` — deliberately a small, curated set, not a re-run of anything the mocked-API layer in
+mootmaker-webapp already covers (see this repo's own README's ["Purpose"](README.md#purpose) and
+[mootmaker/testing-strategy.md's "How vibe coding shapes this
+strategy"](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#how-vibe-coding-shapes-this-strategy)
+for why this layer stays thin):
+
+- **`sign-up.spec.ts`**: a real sign-up through the real deployed webapp, against the real
+  deployed Cognito pool, receiving a real emailed verification code via the SES→SNS→SQS pipeline
+  and completing with it. Proves Cognito + SES + the webapp actually work together end to end.
+- **`forgot-password.spec.ts`**: same proof, for the password-reset code path. Its precondition
+  (an existing confirmed account) is created directly via the Cognito Admin API
+  (`tests/support/cognitoAdmin.ts` — `SignUp` + `AdminConfirmSignUp`, no code involved, see
+  [mootmaker/testing-strategy.md's "Bypassing the code requirement
+  entirely"](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#reading-cognitos-emails-in-tests))
+  rather than through the sign-up UI — that's `sign-up.spec.ts`'s job, not this test's; this test's
+  own real UI interaction is only the forgot-password flow it's actually testing.
+- **`smoke.spec.ts`**: the deployed home page actually loads (DNS, TLS certificate, CloudFront/S3
+  serving) — the one thing that isn't auth- or business-logic-shaped but still only exists once
+  everything is genuinely deployed together.
+
+`tests/support/email.ts` is the email-reading logic itself: generates a `e2e-<uuid>@mail.mootmaker.com`
+address per test (never reused, so concurrent/sequential runs can't cross-talk on the shared
+queue — see "No environment argument" above for why the pipeline itself is shared), long-polls
+`SQS_QUEUE_URL`, and parses the code out of the matching message with `mailparser` (proper
+MIME/transfer-encoding decoding, rather than regexing the raw SES notification body and hoping the
+message happens to be plain ASCII).
+
+`run-full-stack-tests.sh` is the "Deploy pipeline" component above: with no argument, creates a
+fresh `e2e-*` environment (via `create-ephemeral-env.sh e2e`), reads `WEBAPP_URL` and the
+`COGNITO_*` variables from that environment's own Terraform outputs (`authenticate.sh` for the
+API's, a direct `terraform output` for the webapp's, since only mootmaker-api has its own
+`authenticate.sh`) plus `SQS_QUEUE_URL` from this repo's own persistent state, runs `npm test`, and
+tears the environment down afterward regardless of the result (pass, fail, or a script error) via
+a `trap`. Given an existing environment name instead, it runs against that one without creating or
+tearing anything down — useful for iterating without paying a fresh deploy every run.
+
+**Verification status**: verified 2026-08-15 — all three specs pass together via
+`run-full-stack-tests.sh` against a real deployed environment (real Cognito sign-up and
+forgot-password flows, real emailed codes read back off the live SES→SNS→SQS pipeline, real
+deployed home page). One real bug was caught and fixed along the way: `SignUpCommand`
+unconditionally sends its own sign-up confirmation-code email as a side effect, even when the
+caller bypasses that code via `AdminConfirmSignUp` — left alone, that straggler landed in the
+shared queue and could be picked up by a later, unrelated `waitForVerificationCode` call for the
+same address (the queue is a standard, unordered SQS queue). `cognitoAdmin.ts`'s
+`createConfirmedTestAccount` now drains any such stragglers immediately after creating the account,
+before the caller can request a real code. Separately, this suite also caught a real production bug
+in the webapp itself — see `mootmaker-webapp`'s `auth/cognito.ts`.
 
 ## Real email reading (Option 2 — SES → SNS → SQS)
 
