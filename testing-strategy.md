@@ -108,12 +108,6 @@ because all three mostly need to shell out to mootmaker-api's and mootmaker-weba
   that's a separate, persistent, always-on piece of infrastructure (see above), not something
   created per environment.
 
-  This script does **not** need to pass any flag for the Option 1 email bypass: `mootmaker-api/deploy.sh`
-  determines that entirely from the environment name it's given — `claude-*`/`e2e-*` self-enables
-  the bypass, anything else (`test`, `production`, a developer's own personal-sandbox name) leaves
-  it off. See [mootmaker-api/testing-strategy.md](https://github.com/geoffweatherall/mootmaker-api/blob/main/testing-strategy.md#whats-changing)
-  for where that detection lives.
-
 - **`teardown-ephemeral-env.sh <name>`**: tears down one specific, already-known environment —
   calls `undeploy.sh <name>` for mootmaker-webapp then mootmaker-api. Refuses to run unless `name`
   matches `^(claude|e2e)-[0-9]{6}-[0-9]{4}-[a-z0-9]{4}$` exactly — a hard safety rail so a typo can
@@ -150,11 +144,12 @@ this testing surfaced them:
    `cleanup-stale-envs.sh` now all generate/accept `claude-<YYMMDD>-<rand4>` (18 characters, 4 to
    spare against the 22-character ceiling that constraint implies), which day-level cleanup
    granularity doesn't need anyway.
-2. **Every ephemeral environment failed to fully deploy**, because mootmaker-api's email
-   verification-code bypass self-enabled purely from `is_ephemeral`, unconditionally trying to
-   create the same SCP-blocked KMS key on every `claude-*`/`e2e-*` deploy. Fixed in mootmaker-api
-   by adding an explicit `enable_test_email_bypass` variable (defaulting `false`) as a second gate
-   alongside `is_ephemeral` — see mootmaker-api's own `testing-strategy.md`.
+2. **Every ephemeral environment failed to fully deploy**, because mootmaker-api's (now-removed)
+   email verification-code bypass self-enabled purely from the environment name, unconditionally
+   trying to create an SCP-blocked KMS key on every `claude-*`/`e2e-*` deploy. Fixed at the time
+   with an explicit opt-in variable defaulting off; the whole feature was later dropped entirely
+   (2026-08-15, cost reasons unrelated to this bug — see mootmaker-api's own `testing-strategy.md`),
+   so this specific failure mode no longer exists at all.
 
 Net effect: these scripts' own mechanics (name generation, calling `deploy.sh`/`undeploy.sh` in the
 right order and directories, the safety-rail regex, partial-failure cleanup messaging, and
