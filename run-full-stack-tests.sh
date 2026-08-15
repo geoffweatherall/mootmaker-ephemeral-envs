@@ -33,7 +33,14 @@ fi
 cleanup() {
   if [[ -n "${owns_environment}" ]]; then
     echo "Tearing down '${environment}' (created for this run)..." >&2
-    "${script_dir}/teardown-ephemeral-env.sh" "${environment}" || true
+    # Each undeploy.sh prompts for its own interactive "yes" (deliberately, for a human running it
+    # directly - see mootmaker-api/undeploy.sh and mootmaker-webapp/undeploy.sh) - piped here so
+    # this promised "tears down regardless of outcome" actually holds with no TTY attached (a CI
+    # run, an unattended dev session). Safe to auto-approve unconditionally at this call site only:
+    # teardown-ephemeral-env.sh's own regex check already refuses anything that doesn't look like a
+    # claude-*/e2e-* ephemeral name, so by the time either destroy prompt is reached, that's already
+    # guaranteed.
+    yes yes | "${script_dir}/teardown-ephemeral-env.sh" "${environment}" || true
   fi
 }
 trap cleanup EXIT
