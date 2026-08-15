@@ -63,8 +63,13 @@ trap 'echo "create-ephemeral-env.sh failed partway through - environment '"'"'${
 
 echo "Creating ephemeral environment '${name}' (kind: ${kind})..." >&2
 
-"${api_dir}/deploy.sh" "${name}"
-"${webapp_dir}/deploy.sh" "${name}"
+# Redirected to stderr: both deploy.sh scripts print their own progress (and the full
+# mvn/npm/terraform build output) to stdout, unredirected - fine when run directly, but this
+# script's own contract is "prints the generated environment name as the last line of stdout",
+# relied on by callers like run-full-stack-tests.sh that capture it via $(...). Left unredirected,
+# that captured value would be the entire build transcript instead of the environment name.
+"${api_dir}/deploy.sh" "${name}" >&2
+"${webapp_dir}/deploy.sh" "${name}" >&2
 
 trap - ERR
 
