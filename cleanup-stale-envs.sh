@@ -49,7 +49,7 @@ fi
 mapfile -t envs < <(
   echo "${keys_json}" | jq -r '.[]' \
     | cut -d/ -f1 \
-    | grep -E '^(claude|e2e)-[0-9]{6}-[0-9]{4}-[a-z0-9]{4}$' \
+    | grep -E '^(claude|e2e)-[0-9]{6}-[a-z0-9]{4}$' \
     | sort -u
 )
 

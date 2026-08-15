@@ -33,7 +33,7 @@ deciding what actually belongs in this layer versus the faster ones elsewhere.
   environment name so they're wired to each other per the [multi-environment
   convention](https://github.com/geoffweatherall/mootmaker#multi-environment-deployments)), run
   the full-stack suite against it, then tear it down. Environment names follow the
-  `e2e-<YYMMDD>-<HHmm>-<rand4>` convention (see
+  `e2e-<YYMMDD>-<rand4>` convention (see
   [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#environments)).
 - **Full-stack test suite**: Playwright, driving a real browser against the deployed webapp's real
   URL — likely a small, curated set of scenarios (not a re-run of everything the mocked-API layer
@@ -99,7 +99,7 @@ because all three mostly need to shell out to mootmaker-api's and mootmaker-weba
 `deploy.sh`/`undeploy.sh` rather than reimplement any deploy mechanics themselves.
 
 - **`create-ephemeral-env.sh [claude|e2e]`** (default `claude`): generates a name
-  (`claude-<YYMMDD>-<HHmm>-<rand4>` or `e2e-<YYMMDD>-<HHmm>-<rand4>`, see the naming convention in
+  (`claude-<YYMMDD>-<rand4>` or `e2e-<YYMMDD>-<rand4>`, see the naming convention in
   the overall strategy doc), then calls `mootmaker-api/deploy.sh <name>` followed by
   `mootmaker-webapp/deploy.sh <name>` (sibling checkouts, resolved relative to this script's own
   location rather than the caller's working directory). Prints the generated name as the last line
@@ -140,33 +140,30 @@ correctly discovered/listed it before tearing it down on confirmation). See the 
 report for exact command output and current status of the two findings below.
 
 Two mootmaker-api-side issues turned up during this testing (both are findings *about*
-mootmaker-api, not bugs in these scripts — recorded here because they currently affect what
-running these scripts actually does):
+mootmaker-api, not bugs in these scripts) — **both fixed and re-verified the same session**, after
+this testing surfaced them:
 
-1. **`claude-*` names overflow a Lambda function-name limit.**
-   `${environment}-mootmaker-post-confirmation-create-person` is 65 characters for any
-   `claude-<YYMMDD>-<HHmm>-<rand4>` name (Lambda's limit is 64) but only 62 for the
-   3-characters-shorter `e2e-<YYMMDD>-<HHmm>-<rand4>` form — so `create-ephemeral-env.sh claude`
-   (the default, and what Claude's own dev-session environments use) currently fails partway
-   through every time on this one resource, while the `e2e` form gets past it. Tracked in
-   mootmaker-api's `deploy/terraform/lambda.tf`, not fixed here.
-2. **Every ephemeral environment currently fails to fully deploy**, `e2e-*` included, because
-   mootmaker-api's new email verification-code bypass (`is_ephemeral` in
-   `deploy/terraform/locals.tf`) unconditionally requires creating a customer-managed KMS key for
-   any `claude-*`/`e2e-*` environment name, and `kms:CreateKey` is denied (both by IAM and by the
-   same account-wide SCP blocking `ses`/`sns`/`sqs` above). This is a different, wider-reaching
-   instance of the same "written but not applied, pending an SCP update" situation as this
-   session's own SES/SNS/SQS work - except unlike that work (additive, opt-in), the KMS
-   requirement sits on the path every ephemeral deploy already goes through, so it currently blocks
-   `create-ephemeral-env.sh` from ever reaching a fully-working webapp for **any** name. Tracked in
-   mootmaker-api, not fixed here.
+1. **`claude-*` names overflowed a Lambda function-name limit.**
+   `${environment}-mootmaker-post-confirmation-create-person` was 65 characters for the original
+   `claude-<YYMMDD>-<HHmm>-<rand4>` form (Lambda's limit is 64). Fixed here by dropping the
+   time-of-day component — `create-ephemeral-env.sh`/`teardown-ephemeral-env.sh`/
+   `cleanup-stale-envs.sh` now all generate/accept `claude-<YYMMDD>-<rand4>` (18 characters, 4 to
+   spare against the 22-character ceiling that constraint implies), which day-level cleanup
+   granularity doesn't need anyway.
+2. **Every ephemeral environment failed to fully deploy**, because mootmaker-api's email
+   verification-code bypass self-enabled purely from `is_ephemeral`, unconditionally trying to
+   create the same SCP-blocked KMS key on every `claude-*`/`e2e-*` deploy. Fixed in mootmaker-api
+   by adding an explicit `enable_test_email_bypass` variable (defaulting `false`) as a second gate
+   alongside `is_ephemeral` — see mootmaker-api's own `testing-strategy.md`.
 
 Net effect: these scripts' own mechanics (name generation, calling `deploy.sh`/`undeploy.sh` in the
 right order and directories, the safety-rail regex, partial-failure cleanup messaging, and
-`cleanup-stale-envs.sh`'s discovery/listing) are verified working via multiple real create/fail/
-teardown cycles, including teardown correctly cleaning up partially-created resources. A
-full success all the way through a curled webapp URL was **not** achieved this session, blocked
-entirely by finding 2 above - re-verify that once the SCP/IAM update lands.
+`cleanup-stale-envs.sh`'s discovery/listing) were verified working via multiple real create/fail/
+teardown cycles even before the two fixes above, including teardown correctly cleaning up
+partially-created resources. After both fixes, a fresh `claude-<date>-<rand>` environment deploys
+mootmaker-api cleanly end to end (44 resources) and tears down cleanly — re-verify the full
+`create-ephemeral-env.sh` path (API + webapp together) next time either script gets touched, since
+that specific combination wasn't re-run after the fixes landed.
 
 One more behaviour worth knowing about `cleanup-stale-envs.sh`: `terraform destroy` empties a
 state file's contents but doesn't delete the S3 object itself, so a fully-torn-down environment's

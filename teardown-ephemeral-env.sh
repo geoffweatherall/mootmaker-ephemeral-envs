@@ -17,17 +17,17 @@ cd "$(dirname "$0")"
 
 name="${1:-}"
 if [[ -z "${name}" ]]; then
-  echo "Usage: ./teardown-ephemeral-env.sh <name>   (e.g. claude-260815-1432-x7q2)" >&2
+  echo "Usage: ./teardown-ephemeral-env.sh <name>   (e.g. claude-260815-x7q2)" >&2
   exit 1
 fi
 
-# Must look exactly like claude-<YYMMDD>-<HHmm>-<rand4> or
-# e2e-<YYMMDD>-<HHmm>-<rand4> - see mootmaker/testing-strategy.md#environments
-# for the naming convention. Deliberately strict: this script's whole job is
-# to be safe to point at an arbitrary string without risking "test" or
-# "production".
-if [[ ! "${name}" =~ ^(claude|e2e)-[0-9]{6}-[0-9]{4}-[a-z0-9]{4}$ ]]; then
-  echo "'${name}' doesn't look like a claude-*/e2e-* ephemeral environment name (expected e.g. claude-260815-1432-x7q2 or e2e-260815-1432-x7q2)." >&2
+# Must look exactly like claude-<YYMMDD>-<rand4> or e2e-<YYMMDD>-<rand4> - see
+# mootmaker/testing-strategy.md#environments for the naming convention
+# (day-only timestamp, no HHmm - see create-ephemeral-env.sh for why).
+# Deliberately strict: this script's whole job is to be safe to point at an
+# arbitrary string without risking "test" or "production".
+if [[ ! "${name}" =~ ^(claude|e2e)-[0-9]{6}-[a-z0-9]{4}$ ]]; then
+  echo "'${name}' doesn't look like a claude-*/e2e-* ephemeral environment name (expected e.g. claude-260815-x7q2 or e2e-260815-x7q2)." >&2
   echo "Refusing to undeploy - this script only ever touches ephemeral environments, never 'test' or 'production'." >&2
   exit 1
 fi

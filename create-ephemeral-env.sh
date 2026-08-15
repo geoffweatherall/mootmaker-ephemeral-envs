@@ -26,9 +26,16 @@ if [[ "${kind}" != "claude" && "${kind}" != "e2e" ]]; then
   exit 1
 fi
 
-# Compact timestamp (no seconds) + short random suffix - see
+# Day-only timestamp (no time-of-day) + short random suffix - see
 # mootmaker/testing-strategy.md#environments for why (AWS resource-name
-# length limits once <environment>-<project-name>-... is assembled).
+# length limits once <environment>-<project-name>-... is assembled). Originally
+# included HHmm too, but real deployment testing found claude-<YYMMDD>-<HHmm>-<rand4>
+# (23 chars) is 1 character too long once combined with this project's longest
+# Lambda function name suffix (mootmaker-post-confirmation-create-person, 41
+# chars, leaves only 22 for the environment name under Lambda's 64-char limit)
+# - dropping HHmm fixes it with margin to spare (18 chars) and day-level
+# granularity is all the cleanup script needs anyway; the random suffix alone
+# already makes same-day collisions negligible.
 # The `|| true` matters: with `set -o pipefail`, `head -c4` closing the pipe
 # early makes `tr` receive SIGPIPE, which would otherwise be treated as a
 # pipeline failure and abort the script under `set -e`.
@@ -37,7 +44,7 @@ if [[ ${#rand4} -lt 4 ]]; then
   # Extremely unlikely fallback if /dev/urandom is unavailable.
   rand4="$(printf '%04x' "$((RANDOM % 65536))" | tr 'A-F' 'a-f' | tail -c4)"
 fi
-name="${kind}-$(date +%y%m%d)-$(date +%H%M)-${rand4}"
+name="${kind}-$(date +%y%m%d)-${rand4}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 api_dir="${script_dir}/../mootmaker-api"
