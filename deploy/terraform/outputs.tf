@@ -1,7 +1,7 @@
 # PENDING - see ses.tf's top comment: these won't resolve until this
 # directory has actually been applied.
 output "sqs_queue_url" {
-  description = "URL of the queue the e2e test suite long-polls for inbound verification-code email (see mootmaker-e2e/testing-strategy.md#reading-cognitos-emails-in-tests)."
+  description = "URL of the queue any frontend's e2e/acceptance tests long-poll for inbound verification-code email (see mootmaker-test-infra/testing-strategy.md#reading-cognitos-emails-in-tests)."
   value       = aws_sqs_queue.inbound_email.id
 }
 

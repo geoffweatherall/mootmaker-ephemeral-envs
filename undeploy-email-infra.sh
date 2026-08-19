@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "Undeploying mootmaker-e2e email infrastructure..."
+echo "Undeploying shared test email infrastructure..."
 
 terraform -chdir=deploy/terraform init -backend-config=backend.hcl -input=false
 terraform -chdir=deploy/terraform destroy

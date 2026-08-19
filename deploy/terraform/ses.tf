@@ -13,7 +13,7 @@
 # (the data source wouldn't resolve).
 #
 # No environment-name concept here (see also backend.hcl and
-# mootmaker-e2e/testing-strategy.md): this is one persistent, shared
+# mootmaker-test-infra/testing-strategy.md): this is one persistent, shared
 # pipeline, deployed once and left running like mootmaker-domain's hosted
 # zone - not created/destroyed per ephemeral environment. Two reasons:
 #   1. AWS SES only allows one *active* receipt rule set per region per
@@ -22,12 +22,17 @@
 #   2. Each e2e run instead sends to a uniquely-tagged address under the
 #      shared subdomain and filters the SQS queue for its own tag - so
 #      concurrent runs don't see each other's mail even though the pipeline
-#      itself is shared. See mootmaker-e2e/testing-strategy.md for the full
-#      reasoning.
+#      itself is shared. See mootmaker-test-infra/testing-strategy.md for the
+#      full reasoning.
 data "aws_ses_domain_identity" "mail" {
   domain = "mail.mootmaker.com"
 }
 
+# NOTE: still named "mootmaker-e2e-inbound" (not "mootmaker-test-infra-...")
+# even after this repo's rename - changing a rule set's name here would force
+# Terraform to destroy and recreate it, and SES only allows one *active*
+# receipt rule set per region/account, so that's a deliberate, separately
+# approved step, not something to fold into a repo rename.
 resource "aws_ses_receipt_rule_set" "e2e" {
   rule_set_name = "mootmaker-e2e-inbound"
 }

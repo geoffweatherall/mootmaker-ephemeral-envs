@@ -2,7 +2,7 @@
 # Stands up a fresh ephemeral environment: generates a name, then deploys
 # mootmaker-api and mootmaker-webapp into it (as sibling checkouts) by
 # shelling out to each project's own deploy.sh - no deploy mechanics are
-# duplicated here. See mootmaker-e2e/testing-strategy.md#ephemeral-environment-scripts
+# duplicated here. See mootmaker-test-infra/testing-strategy.md#ephemeral-environment-scripts
 # and mootmaker/testing-strategy.md#environments for the naming convention
 # and lifecycle policy this implements.
 #
@@ -10,9 +10,14 @@
 # persistent, shared infrastructure (see testing-strategy.md), not created
 # per environment.
 #
-# Usage: ./create-ephemeral-env.sh [claude|e2e]
-#   claude (default) - Claude's own interactive dev-session environments
-#   e2e              - automated e2e test-run environments
+# Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...]
+#   claude (default) - Claude's own interactive dev-session environments,
+#                       reused for a whole session rather than per-task
+#   <anything else>  - an automated test suite's own run, named for exactly
+#                       which suite created it: "web-e2e"/"web-acc" for
+#                       mootmaker-webapp's e2e/acceptance suites (see their
+#                       own run.sh), "and-e2e"/"and-acc" expected once
+#                       mootmaker-android gains the same pattern
 #
 # Prints the generated environment name as the last line of stdout on
 # success.
@@ -20,9 +25,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 kind="${1:-claude}"
-if [[ "${kind}" != "claude" && "${kind}" != "e2e" ]]; then
-  echo "Usage: ./create-ephemeral-env.sh [claude|e2e]" >&2
-  echo "kind must be 'claude' or 'e2e', got: '${kind}'" >&2
+# kind identifies WHAT created the environment, not just that it's ephemeral - see the usage
+# comment above. Kept short (max 8 characters here) to leave room under the 22-character
+# environment-name ceiling this project's naming convention is built around (see
+# mootmaker/testing-strategy.md#environments) - "-YYMMDD-<rand4>" below is a fixed 12 characters,
+# so kind's own budget is 22 - 12 = 10, capped a little tighter than that for some safety margin.
+if [[ ! "${kind}" =~ ^[a-z][a-z0-9-]{0,7}$ ]]; then
+  echo "Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...]" >&2
+  echo "kind must be lowercase letters/digits/hyphens, starting with a letter, 8 characters or fewer - got: '${kind}'" >&2
   exit 1
 fi
 

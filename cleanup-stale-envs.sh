@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Batch sweep for ephemeral environments left behind by an interrupted
-# session or a failed run. Discovers every claude-*/e2e-* environment across
+# session or a failed run. Discovers every recognized <kind>-<YYMMDD>-<rand4>
+# environment (e.g. "claude-260815-x7q2", "web-e2e-260819-a1b2" - see
+# create-ephemeral-env.sh's usage comment for the naming convention) across
 # ALL projects by listing the shared Terraform state bucket's object keys
 # and grouping by the first path segment of
 # <environment>/<project-name>/terraform.tfstate - no separate environment
-# registry needed (see mootmaker-e2e/testing-strategy.md
+# registry needed (see mootmaker-test-infra/testing-strategy.md
 # #ephemeral-environment-scripts and mootmaker-bootstrap-terraform's README
 # for how the shared state bucket/key layout works).
 #
@@ -44,17 +46,17 @@ if [[ -z "${keys_json}" || "${keys_json}" == "null" ]]; then
   keys_json='[]'
 fi
 
-# Group by the first path segment (the environment name), keep only
-# claude-*/e2e-* names, dedupe.
+# Group by the first path segment (the environment name), keep only names
+# matching the <kind>-<YYMMDD>-<rand4> convention, dedupe.
 mapfile -t envs < <(
   echo "${keys_json}" | jq -r '.[]' \
     | cut -d/ -f1 \
-    | grep -E '^(claude|e2e)-[0-9]{6}-[a-z0-9]{4}$' \
+    | grep -E '^[a-z][a-z0-9-]{0,7}-[0-9]{6}-[a-z0-9]{4}$' \
     | sort -u
 )
 
 if [[ "${#envs[@]}" -eq 0 ]]; then
-  echo "No stale claude-*/e2e-* environments found in s3://${bucket}."
+  echo "No stale ephemeral environments found in s3://${bucket}."
   exit 0
 fi
 

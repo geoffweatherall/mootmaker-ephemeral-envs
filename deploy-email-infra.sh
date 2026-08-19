@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploys the SES receipt rule set, SNS topic, and SQS queue that implement
-# real-email reading for mootmaker-e2e (see testing-strategy.md
+# real-email reading, shared across every frontend's tests (see testing-strategy.md
 # #reading-cognitos-emails-in-tests). Unlike every other mootmaker-* project,
 # this takes no environment argument - like mootmaker-domain, this is one
 # persistent, shared pipeline, not something created per ephemeral
@@ -14,7 +14,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "Deploying mootmaker-e2e email infrastructure (SES receipt rule / SNS / SQS)..."
+echo "Deploying shared test email infrastructure (SES receipt rule / SNS / SQS)..."
 
 terraform -chdir=deploy/terraform init -backend-config=backend.hcl -input=false
 terraform -chdir=deploy/terraform apply -auto-approve
