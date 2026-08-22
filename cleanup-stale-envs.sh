@@ -20,8 +20,11 @@
 #
 # Usage: ./cleanup-stale-envs.sh
 set -euo pipefail
-cd "$(dirname "$0")"
 
+# No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
+# component (e.g. `./mootmaker-test-infra/cleanup-stale-envs.sh` from a parent dir), colliding
+# with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
+# same bug, found and fixed there 2026-08-22.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 teardown_script="${script_dir}/teardown-ephemeral-env.sh"
 

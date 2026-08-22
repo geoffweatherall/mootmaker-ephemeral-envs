@@ -13,7 +13,11 @@
 #
 # Usage: ./teardown-ephemeral-env.sh <name>
 set -euo pipefail
-cd "$(dirname "$0")"
+
+# No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
+# component (e.g. `./mootmaker-test-infra/teardown-ephemeral-env.sh` from a parent dir), colliding
+# with the BASH_SOURCE-based cd further below - see mootmaker-webapp/e2e/run.sh's fuller comment
+# on the same bug, found and fixed there 2026-08-22.
 
 name="${1:-}"
 if [[ -z "${name}" ]]; then

@@ -22,7 +22,11 @@
 # Prints the generated environment name as the last line of stdout on
 # success.
 set -euo pipefail
-cd "$(dirname "$0")"
+
+# No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
+# component (e.g. `./mootmaker-test-infra/create-ephemeral-env.sh` from a parent dir), colliding
+# with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
+# same bug, found and fixed there 2026-08-22.
 
 kind="${1:-claude}"
 # kind identifies WHAT created the environment, not just that it's ephemeral - see the usage
