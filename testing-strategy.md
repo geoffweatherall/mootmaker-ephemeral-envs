@@ -225,7 +225,7 @@ now deletes the two state objects it's itself responsible for (`<name>/mootmaker
 already-successful teardown report as failed. Deliberately scoped to only those two known keys,
 never a blanket delete of everything under `<environment>/` — some other project's state could in
 principle also live under that same environment name (e.g. an ad hoc
-`mootmaker-tools/*/deploy.sh` run against it) that this script has no knowledge of and didn't just
+`mootmaker-demo-data/*/deploy.sh` or `mootmaker-admin-tools/*/deploy.sh` run against it) that this script has no knowledge of and didn't just
 destroy; removing that state object without having destroyed its resources first would orphan real
 infrastructure with nothing left to track it. Verified against a real already-empty environment
 (`claude-260819-ep06`) — re-running teardown against it was confirmed a safe no-op for both

@@ -75,7 +75,7 @@ fi
 # Known project layouts: state-key project name -> sibling checkout with a deploy/terraform/ this
 # script knows how to plan against (same -var="environment=..." shape every deploy.sh/undeploy.sh
 # already uses - see mootmaker-api/mootmaker-webapp's own deploy.sh). Anything else (e.g. an ad hoc
-# mootmaker-tools/*/deploy.sh run, which nests under mootmaker-tools/ rather than its own top-level
+# mootmaker-demo-data/*/deploy.sh or mootmaker-admin-tools/*/deploy.sh run, which nests under that project rather than its own top-level
 # checkout, and has its own separate variables this script doesn't know) is deliberately not
 # guessed at - the resource count from state alone is still shown, just not cross-checked against
 # real AWS.

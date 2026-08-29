@@ -2,7 +2,7 @@
 # include ses/sns/sqs.
 #
 # The receipt rule set/rule, SNS topic, and SQS queue that implement Option
-# 2 (real email reading) from mootmaker/testing-strategy.md
+# 2 (real email reading) from mootmaker/docs/reference/testing-strategy.md
 # #reading-cognitos-emails-in-tests. The domain identity and MX record this
 # depends on live in mootmaker-domain instead, deployed and verified
 # separately - referenced here via a `data` source rather than a hard
