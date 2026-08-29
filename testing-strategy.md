@@ -2,7 +2,7 @@
 
 The overall cross-repo strategy (environments, the approach to reading Cognito's emails in tests,
 and how "vibe coding" shapes all of this) is recorded in
-[mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md).
+[mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md).
 This document covers what's specific to this repo.
 
 ## Purpose
@@ -25,7 +25,7 @@ use-case-driven) test suites, in its own repo, using whatever's idiomatic there 
 Playwright for [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp), presumably
 Kotlin + Espresso/Compose for `mootmaker-android` later. See
 [mootmaker-webapp/testing-strategy.md](https://github.com/geoffweatherall/mootmaker-webapp/blob/main/testing-strategy.md)
-for that repo's suites, and [mootmaker/use-cases.md](https://github.com/geoffweatherall/mootmaker/blob/main/use-cases.md)
+for that repo's suites, and [mootmaker/use-cases.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/use-cases.md)
 for the client-agnostic scenario list they draw on.
 
 **Known gap**: `create-ephemeral-env.sh` unconditionally deploys mootmaker-api *and*
@@ -38,7 +38,7 @@ actually exists and this becomes a real cost rather than a hypothetical one.
 
 This repo owns the receipt rule, SNS topic, and SQS queue (the domain identity and MX record live
 in [mootmaker-domain](https://github.com/geoffweatherall/mootmaker-domain) instead — see
-[mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#reading-cognitos-emails-in-tests)
+[mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md#reading-cognitos-emails-in-tests)
 for the full design, including why this is **one persistent, shared pipeline** rather than
 something created per ephemeral environment or per frontend). Any frontend's test suite long-polls
 the queue and parses the verification code out of the real email body, filtering by a unique
@@ -81,7 +81,7 @@ once and left running, like mootmaker-domain's hosted zone. Reasoning (see also
 ## Ephemeral environment scripts
 
 Decided 2026-08-15 (see [mootmaker/testing-strategy.md's Ephemeral environment
-lifecycle](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md#ephemeral-environment-lifecycle)
+lifecycle](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md#ephemeral-environment-lifecycle)
 for how this fits the overall policy). **Built and tested against real AWS environments,
 2026-08-15**; a fourth script (`list-ephemeral-envs.sh`) added 2026-08-19, alongside real
 behavioural changes to the naming convention and `teardown-ephemeral-env.sh` (not just doc
