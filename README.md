@@ -22,7 +22,7 @@ only owns the things that are genuinely cross-repo:
   `undeploy-email-infra.sh`) — one persistent, shared queue any frontend's tests can long-poll for
   a real Cognito verification-code email. Deployed once, not per environment, not per frontend.
 
-See [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/testing-strategy.md)
+See [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md)
 for how this fits the wider cross-repo strategy, and
 [testing-strategy.md](testing-strategy.md) for the detail specific to this repo.
 
@@ -37,7 +37,7 @@ own e2e/acceptance tests" rather than one shared suite:
   moved into [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp)'s new `e2e/`
   directory, unchanged in behaviour.
 - `use-cases.md` moved into
-  [mootmaker](https://github.com/geoffweatherall/mootmaker/blob/main/use-cases.md) — a
+  [mootmaker](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/use-cases.md) — a
   client-agnostic list of scenarios, not owned by any one frontend.
 - This repo was renamed and kept only the genuinely cross-repo pieces described above.
 
