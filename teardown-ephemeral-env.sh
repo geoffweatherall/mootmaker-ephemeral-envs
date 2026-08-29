@@ -2,12 +2,12 @@
 # Tears down one specific, already-known ephemeral environment: calls
 # undeploy.sh for mootmaker-webapp then mootmaker-api (sibling checkouts).
 # This is what create-ephemeral-env.sh's failure trap points at, and what
-# Claude's commit-time cleanup prompt (see mootmaker/testing-strategy.md
+# Claude's commit-time cleanup prompt (see mootmaker/docs/reference/testing-strategy.md
 # #ephemeral-environment-lifecycle) uses once the user confirms.
 #
 # Refuses to run against anything that doesn't look like a recognized
 # <kind>-<YYMMDD>-<rand4> ephemeral environment name - this is a hard safety rail (a typo must never
-# be able to reach "test" or "production"), not just a UX nicety. Each
+# be able to reach "production"), not just a UX nicety. Each
 # undeploy.sh still prompts for its own interactive confirmation (no
 # -auto-approve) before destroying anything.
 #
@@ -28,10 +28,10 @@ fi
 # Must look exactly like <kind>-<YYMMDD>-<rand4>, where kind is 1-8 lowercase
 # letters/digits/hyphens starting with a letter (e.g. "claude", "web-e2e",
 # "web-acc" - see create-ephemeral-env.sh's own usage comment for the
-# convention, and mootmaker/testing-strategy.md#environments for the
+# convention, and mootmaker/docs/reference/testing-strategy.md#environments for the
 # day-only-timestamp reasoning). Deliberately strict on shape, not on which
 # specific kind values exist: this script's whole job is to be safe to point
-# at an arbitrary string without risking "test" or "production", not to be
+# at an arbitrary string without risking "production", not to be
 # the source of truth for which kinds are in use.
 if [[ ! "${name}" =~ ^[a-z][a-z0-9-]{0,7}-[0-9]{6}-[a-z0-9]{4}$ ]]; then
   echo "'${name}' doesn't look like a <kind>-<YYMMDD>-<rand4> ephemeral environment name (expected e.g. claude-260815-x7q2 or web-e2e-260815-x7q2)." >&2

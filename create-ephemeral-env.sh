@@ -3,7 +3,7 @@
 # mootmaker-api and mootmaker-webapp into it (as sibling checkouts) by
 # shelling out to each project's own deploy.sh - no deploy mechanics are
 # duplicated here. See mootmaker-test-infra/testing-strategy.md#ephemeral-environment-scripts
-# and mootmaker/testing-strategy.md#environments for the naming convention
+# and mootmaker/docs/reference/testing-strategy.md#environments for the naming convention
 # and lifecycle policy this implements.
 #
 # Does NOT touch the SES/SNS/SQS email-reading pipeline - that's separate,
@@ -32,7 +32,7 @@ kind="${1:-claude}"
 # kind identifies WHAT created the environment, not just that it's ephemeral - see the usage
 # comment above. Kept short (max 8 characters here) to leave room under the 22-character
 # environment-name ceiling this project's naming convention is built around (see
-# mootmaker/testing-strategy.md#environments) - "-YYMMDD-<rand4>" below is a fixed 12 characters,
+# mootmaker/docs/reference/testing-strategy.md#environments) - "-YYMMDD-<rand4>" below is a fixed 12 characters,
 # so kind's own budget is 22 - 12 = 10, capped a little tighter than that for some safety margin.
 if [[ ! "${kind}" =~ ^[a-z][a-z0-9-]{0,7}$ ]]; then
   echo "Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...]" >&2
@@ -41,7 +41,7 @@ if [[ ! "${kind}" =~ ^[a-z][a-z0-9-]{0,7}$ ]]; then
 fi
 
 # Day-only timestamp (no time-of-day) + short random suffix - see
-# mootmaker/testing-strategy.md#environments for why (AWS resource-name
+# mootmaker/docs/reference/testing-strategy.md#environments for why (AWS resource-name
 # length limits once <environment>-<project-name>-... is assembled). Originally
 # included HHmm too, but real deployment testing found claude-<YYMMDD>-<HHmm>-<rand4>
 # (23 chars) is 1 character too long once combined with this project's longest
