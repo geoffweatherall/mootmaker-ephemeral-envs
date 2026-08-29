@@ -65,7 +65,7 @@ echo "Ephemeral environment '${name}' torn down." >&2
 # testing-strategy.md's "Testing notes" for the behaviour this replaces. Only the two state
 # objects this script itself is responsible for (the ones the two undeploy.sh calls above just
 # emptied) are removed - never anything else under this environment's prefix, in case some other
-# project's state also happens to live there (e.g. an ad hoc mootmaker-tools/*/deploy.sh run
+# project's state also happens to live there (e.g. an ad hoc mootmaker-demo-data/*/deploy.sh or mootmaker-admin-tools/*/deploy.sh run
 # against this same environment name) that this script has no knowledge of and didn't just
 # destroy; deleting that state object without having destroyed its resources first would orphan
 # real infrastructure with nothing left to track it. A best-effort step, not a hard failure: the
