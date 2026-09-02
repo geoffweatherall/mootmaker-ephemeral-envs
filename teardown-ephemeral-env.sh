@@ -46,7 +46,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Every component this project knows how to undeploy: state-key name -> checkout directory. The
 # state key under <environment>/ is the repository name, which is exactly why collapsing the demo
 # tooling into a single mootmaker-demo-data component made this table tractable - see
-# mootmaker/designs/demo-data-component.md.
+# mootmaker/designs/archive/demo-data-component.md.
 declare -A component_dirs=(
   [mootmaker-webapp]="${script_dir}/../mootmaker-webapp"
   [mootmaker-api]="${script_dir}/../mootmaker-api"
