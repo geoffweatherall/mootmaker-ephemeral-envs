@@ -2,7 +2,9 @@
 # Stands up a fresh ephemeral environment: generates a name, then deploys
 # mootmaker-api and mootmaker-webapp into it (as sibling checkouts) by
 # shelling out to each project's own deploy.sh - no deploy mechanics are
-# duplicated here. See mootmaker-test-infra/testing-strategy.md#ephemeral-environment-scripts
+# duplicated here. mootmaker-demo-data is deployed too if --with-demo-data
+# is passed: demo data is always deployed to production, but most ephemeral
+# work does not need ~500 generated meetings, so it is opt-in here. See mootmaker-test-infra/testing-strategy.md#ephemeral-environment-scripts
 # and mootmaker/docs/reference/testing-strategy.md#environments for the naming convention
 # and lifecycle policy this implements.
 #
@@ -10,7 +12,7 @@
 # persistent, shared infrastructure (see testing-strategy.md), not created
 # per environment.
 #
-# Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...]
+# Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data]
 #   claude (default) - Claude's own interactive dev-session environments,
 #                       reused for a whole session rather than per-task
 #   <anything else>  - an automated test suite's own run, named for exactly
@@ -18,6 +20,12 @@
 #                       mootmaker-webapp's e2e/acceptance suites (see their
 #                       own run.sh), "and-e2e"/"and-acc" expected once
 #                       mootmaker-android gains the same pattern
+#
+#   --with-demo-data - also deploy mootmaker-demo-data, and seed the
+#                       environment by invoking it once. Without this the
+#                       environment comes up empty, which is what most work
+#                       wants. Teardown does not need to be told either way:
+#                       it discovers what is deployed from the state prefix.
 #
 # Prints the generated environment name as the last line of stdout on
 # success.
@@ -28,7 +36,21 @@ set -euo pipefail
 # with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
 # same bug, found and fixed there 2026-08-22.
 
-kind="${1:-claude}"
+with_demo_data=""
+positional=()
+for arg in "$@"; do
+  case "${arg}" in
+    --with-demo-data) with_demo_data="true" ;;
+    -*)
+      echo "Unknown option: ${arg}" >&2
+      echo "Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data]" >&2
+      exit 1
+      ;;
+    *) positional+=("${arg}") ;;
+  esac
+done
+
+kind="${positional[0]:-claude}"
 # kind identifies WHAT created the environment, not just that it's ephemeral - see the usage
 # comment above. Kept short (max 8 characters here) to leave room under the 22-character
 # environment-name ceiling this project's naming convention is built around (see
@@ -63,6 +85,7 @@ name="${kind}-$(date +%y%m%d)-${rand4}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 api_dir="${script_dir}/../mootmaker-api"
 webapp_dir="${script_dir}/../mootmaker-webapp"
+demo_data_dir="${script_dir}/../mootmaker-demo-data"
 
 if [[ ! -f "${api_dir}/deploy.sh" ]]; then
   echo "Expected to find the mootmaker-api checkout at ${api_dir} (as a sibling of this directory)." >&2
@@ -70,6 +93,10 @@ if [[ ! -f "${api_dir}/deploy.sh" ]]; then
 fi
 if [[ ! -f "${webapp_dir}/deploy.sh" ]]; then
   echo "Expected to find the mootmaker-webapp checkout at ${webapp_dir} (as a sibling of this directory)." >&2
+  exit 1
+fi
+if [[ -n "${with_demo_data}" && ! -f "${demo_data_dir}/deploy.sh" ]]; then
+  echo "Expected to find the mootmaker-demo-data checkout at ${demo_data_dir} (as a sibling of this directory)." >&2
   exit 1
 fi
 
@@ -84,6 +111,24 @@ echo "Creating ephemeral environment '${name}' (kind: ${kind})..." >&2
 # that captured value would be the entire build transcript instead of the environment name.
 "${api_dir}/deploy.sh" "${name}" >&2
 "${webapp_dir}/deploy.sh" "${name}" >&2
+
+if [[ -n "${with_demo_data}" ]]; then
+  # After mootmaker-api, always: demo-data reads its credentials from SSM parameters that
+  # mootmaker-api's Terraform creates, so deploying it first would give a Lambda that fails on
+  # every invocation with a missing-parameter error.
+  "${demo_data_dir}/deploy.sh" "${name}" >&2
+
+  # Deploying demo-data does not populate anything - the Lambda only runs when invoked. Seed once
+  # here so --with-demo-data means "an environment with demo data in it", not "an environment that
+  # could have some". --cli-read-timeout clears the function's own 900s ceiling; the CLI's 60s
+  # default would report a false failure on a full seed while the Lambda ran on regardless.
+  echo "Seeding '${name}' with demo data..." >&2
+  aws lambda invoke \
+    --function-name "${name}-mootmaker-demo-data" \
+    --cli-read-timeout 900 \
+    --payload '{}' \
+    /dev/stdout >&2
+fi
 
 trap - ERR
 

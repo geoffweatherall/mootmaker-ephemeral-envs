@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Tears down one specific, already-known ephemeral environment: calls
-# undeploy.sh for mootmaker-webapp then mootmaker-api (sibling checkouts).
-# This is what create-ephemeral-env.sh's failure trap points at, and what
-# Claude's commit-time cleanup prompt (see mootmaker/docs/reference/testing-strategy.md
-# #ephemeral-environment-lifecycle) uses once the user confirms.
+# Tears down one specific, already-known ephemeral environment.
 #
-# Refuses to run against anything that doesn't look like a recognized
-# <kind>-<YYMMDD>-<rand4> ephemeral environment name - this is a hard safety rail (a typo must never
-# be able to reach "production"), not just a UX nicety. Each
-# undeploy.sh still prompts for its own interactive confirmation (no
-# -auto-approve) before destroying anything.
+# DISCOVERS what is deployed by listing the environment's own Terraform state prefix in S3, rather
+# than iterating a hardcoded list of components. That is the fix for a real bug: the previous
+# version knew only about mootmaker-webapp and mootmaker-api, so tearing down an environment that
+# also had demo tooling deployed removed two components, left the others' state orphaned in S3, and
+# reported success throughout. A component nobody remembered is now still torn down - and one this
+# script does not recognise stops it, loudly, instead of being silently skipped.
+#
+# Refuses to run against anything that doesn't look like a recognized <kind>-<YYMMDD>-<rand4>
+# ephemeral environment name - a hard safety rail (a typo must never be able to reach
+# "production"), not just a UX nicety. Each undeploy.sh still prompts for its own interactive
+# confirmation (no -auto-approve) before destroying anything.
 #
 # Usage: ./teardown-ephemeral-env.sh <name>
 set -euo pipefail
@@ -40,43 +42,95 @@ if [[ ! "${name}" =~ ^[a-z][a-z0-9-]{0,7}-[0-9]{6}-[a-z0-9]{4}$ ]]; then
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-api_dir="${script_dir}/../mootmaker-api"
-webapp_dir="${script_dir}/../mootmaker-webapp"
 
-if [[ ! -f "${api_dir}/undeploy.sh" ]]; then
-  echo "Expected to find the mootmaker-api checkout at ${api_dir} (as a sibling of this directory)." >&2
+# Every component this project knows how to undeploy: state-key name -> checkout directory. The
+# state key under <environment>/ is the repository name, which is exactly why collapsing the demo
+# tooling into a single mootmaker-demo-data component made this table tractable - see
+# mootmaker/designs/demo-data-component.md.
+declare -A component_dirs=(
+  [mootmaker-webapp]="${script_dir}/../mootmaker-webapp"
+  [mootmaker-api]="${script_dir}/../mootmaker-api"
+  [mootmaker-demo-data]="${script_dir}/../mootmaker-demo-data"
+)
+
+# Undeploy order matters: consumers before the API they read, so nothing is left pointing at a
+# half-destroyed environment. Anything discovered that isn't in this list is an error, not a
+# silent skip.
+teardown_order=(mootmaker-webapp mootmaker-demo-data mootmaker-api)
+
+account_id="$(aws sts get-caller-identity --query Account --output text)"
+# Matches the naming convention documented in mootmaker-bootstrap-terraform's README:
+# "remote-state-<aws-account-id>" - same derivation cleanup-stale-envs.sh and
+# list-ephemeral-envs.sh use.
+state_bucket="remote-state-${account_id}"
+
+echo "Discovering components deployed to '${name}' from s3://${state_bucket}/${name}/..." >&2
+mapfile -t discovered < <(
+  aws s3api list-objects-v2 --bucket "${state_bucket}" --prefix "${name}/" \
+    --query 'Contents[].Key' --output text 2>/dev/null |
+    tr '\t' '\n' | sed -n "s|^${name}/\(.*\)/terraform.tfstate$|\1|p" | sort -u
+)
+
+if [[ "${#discovered[@]}" -eq 0 ]]; then
+  echo "No Terraform state found for '${name}' - nothing to tear down." >&2
+  echo "(If you expected resources here, check the name: state lives at s3://${state_bucket}/${name}/<component>/terraform.tfstate.)" >&2
+  exit 0
+fi
+
+echo "Found: ${discovered[*]}" >&2
+
+# Refuse rather than guess. An unrecognised component means real infrastructure this script cannot
+# destroy; carrying on would delete the state objects it does know about and report success while
+# leaving that component running with nothing tracking it - the exact failure being fixed here.
+unknown=()
+for component in "${discovered[@]}"; do
+  if [[ -z "${component_dirs[${component}]:-}" ]]; then
+    unknown+=("${component}")
+  fi
+done
+if [[ "${#unknown[@]}" -gt 0 ]]; then
+  echo "Refusing to tear down '${name}': found state for component(s) this script doesn't know how to undeploy: ${unknown[*]}" >&2
+  echo "Undeploy them by hand first (each project's own undeploy.sh), or add them to component_dirs in this script." >&2
   exit 1
 fi
-if [[ ! -f "${webapp_dir}/undeploy.sh" ]]; then
-  echo "Expected to find the mootmaker-webapp checkout at ${webapp_dir} (as a sibling of this directory)." >&2
-  exit 1
-fi
 
-echo "Tearing down ephemeral environment '${name}'..." >&2
-
-"${webapp_dir}/undeploy.sh" "${name}"
-"${api_dir}/undeploy.sh" "${name}"
-
-echo "Ephemeral environment '${name}' torn down." >&2
+for component in "${teardown_order[@]}"; do
+  # shellcheck disable=SC2076
+  if [[ ! " ${discovered[*]} " =~ " ${component} " ]]; then
+    continue
+  fi
+  dir="${component_dirs[${component}]}"
+  if [[ ! -f "${dir}/undeploy.sh" ]]; then
+    echo "Expected to find the ${component} checkout at ${dir} (as a sibling of this directory)." >&2
+    exit 1
+  fi
+  echo "=== Undeploying ${component} from '${name}' ===" >&2
+  "${dir}/undeploy.sh" "${name}"
+done
 
 # terraform destroy empties a state file's contents but doesn't delete the S3 object itself, so
 # without this, a fully-torn-down environment keeps showing up in cleanup-stale-envs.sh's
-# discovery (which lists state-bucket keys, not their contents) forever - see
-# testing-strategy.md's "Testing notes" for the behaviour this replaces. Only the two state
-# objects this script itself is responsible for (the ones the two undeploy.sh calls above just
-# emptied) are removed - never anything else under this environment's prefix, in case some other
-# project's state also happens to live there (e.g. an ad hoc mootmaker-demo-data/*/deploy.sh or mootmaker-admin-tools/*/deploy.sh run
-# against this same environment name) that this script has no knowledge of and didn't just
-# destroy; deleting that state object without having destroyed its resources first would orphan
-# real infrastructure with nothing left to track it. A best-effort step, not a hard failure: the
-# actual teardown above already succeeded by this point, so a transient S3 error here shouldn't
-# make this script report failure for work it already finished.
-account_id="$(aws sts get-caller-identity --query Account --output text)"
-# Matches the naming convention documented in mootmaker-bootstrap-terraform's README:
-# "remote-state-<aws-account-id>" - same derivation cleanup-stale-envs.sh uses.
-state_bucket="remote-state-${account_id}"
+# discovery (which lists state-bucket keys, not their contents) forever. Only the objects this
+# script itself just emptied are removed.
 echo "Removing this environment's now-empty state files from s3://${state_bucket}..." >&2
-if ! aws s3 rm "s3://${state_bucket}/${name}/mootmaker-webapp/terraform.tfstate" >&2 ||
-   ! aws s3 rm "s3://${state_bucket}/${name}/mootmaker-api/terraform.tfstate" >&2; then
+removal_failed=""
+for component in "${discovered[@]}"; do
+  aws s3 rm "s3://${state_bucket}/${name}/${component}/terraform.tfstate" >&2 || removal_failed="true"
+done
+if [[ -n "${removal_failed}" ]]; then
   echo "Warning: failed to remove one or more state files for '${name}' from s3://${state_bucket} - it may still show up in cleanup-stale-envs.sh's discovery. The environment itself was torn down successfully regardless." >&2
 fi
+
+# An environment is only "gone" when its state prefix is empty. Asserting that is the point: the
+# previous version trusted that the right scripts had been called, which is precisely how it
+# reported success while leaving state behind.
+remaining="$(aws s3api list-objects-v2 --bucket "${state_bucket}" --prefix "${name}/" \
+  --query 'length(Contents)' --output text 2>/dev/null || echo "None")"
+if [[ "${remaining}" != "None" && "${remaining}" != "0" ]]; then
+  echo "Warning: s3://${state_bucket}/${name}/ still contains ${remaining} object(s) after teardown:" >&2
+  aws s3 ls "s3://${state_bucket}/${name}/" --recursive >&2 || true
+  echo "'${name}' is NOT fully torn down. Investigate before assuming it is gone." >&2
+  exit 1
+fi
+
+echo "Ephemeral environment '${name}' torn down; its state prefix is empty." >&2
