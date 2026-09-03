@@ -18,9 +18,12 @@ only owns the things that are genuinely cross-repo:
   deploy/undeploy [mootmaker-api](https://github.com/geoffweatherall/mootmaker-api) and
   [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp) *together*, so they
   can't live inside either one on their own.
-- **The real-email SES→SNS→SQS pipeline** (`deploy/terraform/`, `deploy-email-infra.sh`,
-  `undeploy-email-infra.sh`) — one persistent, shared queue any frontend's tests can long-poll for
-  a real Cognito verification-code email. Deployed once, not per environment, not per frontend.
+
+The real-email SES→SNS→SQS pipeline this repo used to also own moved to its own repo,
+[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing), 2026-09-03 —
+see [History](#history) below. It was never really related to the scripts above; the two were only
+ever combined because both were the "genuinely cross-repo" leftovers of the original
+`mootmaker-e2e` split.
 
 See [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md)
 for how this fits the wider cross-repo strategy, and
@@ -39,19 +42,23 @@ own e2e/acceptance tests" rather than one shared suite:
 - `use-cases.md` moved into
   [mootmaker](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/use-cases.md) — a
   client-agnostic list of scenarios, not owned by any one frontend.
-- This repo was renamed and kept only the genuinely cross-repo pieces described above.
+- This repo was renamed (on GitHub too, since — this note used to say that rename was still
+  deferred; it has since happened) and kept only the genuinely cross-repo pieces described above.
 
-GitHub still has this checked out under the old remote name (`mootmaker-e2e`) — the local rename
-happened first, deliberately, and the GitHub-side rename is deferred to a later, separate step.
+**2026-09-03**: those "genuinely cross-repo pieces" turned out to still be two unrelated things
+combined by circumstance rather than by relationship — the ephemeral-environment scripts above, and
+the real-email SES→SNS→SQS pipeline. The pipeline moved to its own repo,
+[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing); this repo
+kept only the ephemeral-environment scripts and is being renamed again, to
+[mootmaker-ephemeral-envs](https://github.com/geoffweatherall/mootmaker-ephemeral-envs), to match.
 
 ## Status
 
-The ephemeral-environment lifecycle scripts and the SES→SNS→SQS pipeline were both built and
-verified working against real AWS 2026-08-15 (back when this repo was still `mootmaker-e2e`) — see
-[testing-strategy.md](testing-strategy.md) for detail. The deployed AWS resources themselves — SQS
-queue, SNS topic, SES receipt rule, and the Terraform state key they're stored under — were left
-exactly as they were through the 2026-08-19 rename, to avoid forcing a destroy/recreate of a
-pipeline other tests depend on. See `deploy/terraform/backend.hcl`'s comment.
+The ephemeral-environment lifecycle scripts were built and verified working against real AWS
+2026-08-15 (back when this repo was still `mootmaker-e2e`) — see [testing-strategy.md](testing-strategy.md)
+for detail. The real-email SES→SNS→SQS pipeline that was also verified that day now lives in
+[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing) — see that
+repo's own README for its status, unchanged by the move.
 
 Also 2026-08-19: environment names now identify exactly what created them (e.g. `web-e2e-*`/
 `web-acc-*` for `mootmaker-webapp`'s own suites, not a single generic `e2e-*` for everything —

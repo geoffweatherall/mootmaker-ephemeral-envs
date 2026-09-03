@@ -8,17 +8,18 @@ This document covers what's specific to this repo.
 ## Purpose
 
 This repo (formerly `mootmaker-e2e`, renamed 2026-08-19 — see [README.md's
-History](README.md#history)) owns only the pieces of the testing strategy that are genuinely
-shared across more than one frontend, and so can't live inside any single frontend's own repo:
+History](README.md#history)) owns the ephemeral-environment lifecycle: standing up/tearing down a
+matched [mootmaker-api](https://github.com/geoffweatherall/mootmaker-api) +
+[mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp) pair under one environment
+name, and sweeping up anything left behind. See [Ephemeral environment
+scripts](#ephemeral-environment-scripts) below.
 
-- **Ephemeral-environment lifecycle** — standing up/tearing down a matched
-  [mootmaker-api](https://github.com/geoffweatherall/mootmaker-api) +
-  [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp) pair under one
-  environment name, and sweeping up anything left behind. See [Ephemeral environment
-  scripts](#ephemeral-environment-scripts) below.
-- **Real Cognito email reading** — the SES→SNS→SQS pipeline any frontend's tests can long-poll for
-  a real verification-code email, when a scenario specifically needs to prove that path works. See
-  [Real email reading](#real-email-reading-option-2--sessnssqs) below.
+This repo used to also own real Cognito email reading (the SES→SNS→SQS pipeline any frontend's
+tests can long-poll for a real verification-code email) — that moved to
+[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing) 2026-09-03,
+see that repo's own `testing-strategy.md`. The two were only ever combined because both were the
+"genuinely cross-repo" leftovers of the original `mootmaker-e2e` split, not because they're
+actually related.
 
 Each frontend owns its *own* `e2e/` (thin, real-infra, curated) and `acceptance/` (broader,
 use-case-driven) test suites, in its own repo, using whatever's idiomatic there — TypeScript +
@@ -33,50 +34,6 @@ mootmaker-webapp together. That's fine for mootmaker-webapp's own suites, but An
 only need the API half — deploying an unused webapp alongside it would be pure overhead. Not solved
 here yet; likely fix is an optional `--api-only` (or similar) flag once Android's acceptance suite
 actually exists and this becomes a real cost rather than a hypothetical one.
-
-## Real email reading (Option 2 — SES → SNS → SQS)
-
-This repo owns the receipt rule, SNS topic, and SQS queue (the domain identity and MX record live
-in [mootmaker-domain](https://github.com/geoffweatherall/mootmaker-domain) instead — see
-[mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md#reading-cognitos-emails-in-tests)
-for the full design, including why this is **one persistent, shared pipeline** rather than
-something created per ephemeral environment or per frontend). Any frontend's test suite long-polls
-the queue and parses the verification code out of the real email body, filtering by a unique
-address tag per run. Used only for the small number of tests whose specific purpose is proving
-Cognito's email sending actually works — everywhere else, tests use the Cognito Admin-API bypass
-instead (`AdminConfirmSignUp` / `AdminSetUserPassword` — see mootmaker/testing-strategy.md's
-"Bypassing the code requirement entirely").
-
-**Deployed 2026-08-15, unchanged since**: `deploy/terraform/` here has the receipt rule set/rule,
-SNS topic (with a policy letting the SES rule publish to it), and SQS queue (subscribed to the
-topic, raw delivery enabled), plus `deploy-email-infra.sh`/`undeploy-email-infra.sh` at the repo
-root, matching mootmaker-domain's no-environment-argument pattern (see "No environment argument"
-below). The domain identity is referenced via `data "aws_ses_domain_identity"` rather than a
-remote-state read, mirroring how mootmaker-api/mootmaker-webapp already find mootmaker-domain's
-hosted zone. `mail.mootmaker.com` genuinely receives mail into `sqs_queue_url`, and this pipeline
-is exercised end-to-end by mootmaker-webapp's `e2e/sign-up.spec.ts` and `e2e/forgot-password.spec.ts`.
-
-**2026-08-19 repo rename**: this repo moved from `mootmaker-e2e` to `mootmaker-test-infra`, but the
-deployed AWS resources, their Terraform-managed names, and the state key they're stored under
-(`mootmaker-e2e-email/terraform.tfstate`) were all left exactly as they were — see
-`deploy/terraform/backend.hcl`'s comment for why (changing any of them would mean either
-re-pointing Terraform at an empty state for already-live resources, or forcing a destroy+recreate
-of a pipeline other tests actively depend on — not something to fold silently into a rename).
-
-### No environment argument
-
-Unlike `create-ephemeral-env.sh`'s pipeline, this Terraform takes no environment name — deployed
-once and left running, like mootmaker-domain's hosted zone. Reasoning (see also
-`deploy/terraform/backend.hcl`'s and `ses.tf`'s comments):
-
-- SES allows only one *active* receipt rule set per region/account, so a fresh rule set per
-  ephemeral e2e run would mean concurrent runs fighting over which one is active.
-- Concurrency is instead handled at the message level: each e2e run sends to a uniquely-tagged
-  address under the shared subdomain and filters the SQS queue for its own tag.
-- A fixed backend state key also means `cleanup-stale-envs.sh`'s discovery logic — which groups by
-  first path segment and matches only the `<kind>-<YYMMDD>-<rand4>` shape (see [Naming
-  convention](#naming-convention) below) — never mistakes this persistent infrastructure for a
-  stale ephemeral environment.
 
 ## Ephemeral environment scripts
 
@@ -239,5 +196,3 @@ is still a safe no-op either way.
 
 - The `--api-only`-style flag noted under [Purpose](#purpose) above, once Android's acceptance
   suite exists and needs it.
-- The GitHub-side rename from `mootmaker-e2e` to `mootmaker-test-infra` — deferred deliberately,
-  see [README.md's History](README.md#history).
