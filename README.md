@@ -1,4 +1,4 @@
-# mootmaker-test-infra
+# mootmaker-ephemeral-envs
 
 A project that is part of my [Claude Code exploration](https://github.com/geoffweatherall/mootmaker).
 

@@ -4,7 +4,7 @@
 # shelling out to each project's own deploy.sh - no deploy mechanics are
 # duplicated here. mootmaker-demo-data is deployed too if --with-demo-data
 # is passed: demo data is always deployed to production, but most ephemeral
-# work does not need ~500 generated meetings, so it is opt-in here. See mootmaker-test-infra/testing-strategy.md#ephemeral-environment-scripts
+# work does not need ~500 generated meetings, so it is opt-in here. See testing-strategy.md#ephemeral-environment-scripts
 # and mootmaker/docs/reference/testing-strategy.md#environments for the naming convention
 # and lifecycle policy this implements.
 #
@@ -32,7 +32,7 @@
 set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
-# component (e.g. `./mootmaker-test-infra/create-ephemeral-env.sh` from a parent dir), colliding
+# component (e.g. `./mootmaker-ephemeral-envs/create-ephemeral-env.sh` from a parent dir), colliding
 # with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
 # same bug, found and fixed there 2026-08-22.
 

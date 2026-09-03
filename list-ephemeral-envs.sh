@@ -31,7 +31,7 @@
 set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
-# component (e.g. `./mootmaker-test-infra/list-ephemeral-envs.sh` from a parent dir), colliding
+# component (e.g. `./mootmaker-ephemeral-envs/list-ephemeral-envs.sh` from a parent dir), colliding
 # with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
 # same bug, found and fixed there 2026-08-22.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,7 +56,7 @@ fi
 # Only <kind>-<YYMMDD>-<rand4>/<project>/terraform.tfstate keys - same shape
 # teardown-ephemeral-env.sh/cleanup-stale-envs.sh recognize (see create-ephemeral-env.sh's usage
 # comment for the naming convention), so this never lists persistent infrastructure that happens
-# to share the same bucket (e.g. mootmaker-test-infra's own mootmaker-e2e-email/, mootmaker-domain's
+# to share the same bucket (e.g. mootmaker-email-testing's own mootmaker-e2e-email/, mootmaker-domain's
 # domain/, or test/production/bootstrap) - and never runs a plan against test/production either,
 # since it's structurally impossible for this filter to match either name.
 mapfile -t rows < <(
