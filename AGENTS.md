@@ -1,4 +1,4 @@
-# mootmaker-test-infra
+# mootmaker-ephemeral-envs
 
 Ephemeral-environment lifecycle scripts shared by every frontend: stand up/tear down a matched
 `mootmaker-api` + `mootmaker-webapp` pair under one environment name.

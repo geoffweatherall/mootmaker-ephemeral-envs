@@ -6,7 +6,7 @@
 # ALL projects by listing the shared Terraform state bucket's object keys
 # and grouping by the first path segment of
 # <environment>/<project-name>/terraform.tfstate - no separate environment
-# registry needed (see mootmaker-test-infra/testing-strategy.md
+# registry needed (see testing-strategy.md
 # #ephemeral-environment-scripts and mootmaker-bootstrap-terraform's README
 # for how the shared state bucket/key layout works).
 #
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
-# component (e.g. `./mootmaker-test-infra/cleanup-stale-envs.sh` from a parent dir), colliding
+# component (e.g. `./mootmaker-ephemeral-envs/cleanup-stale-envs.sh` from a parent dir), colliding
 # with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
 # same bug, found and fixed there 2026-08-22.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
