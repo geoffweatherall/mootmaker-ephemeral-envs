@@ -10,10 +10,17 @@
 #
 # Refuses to run against anything that doesn't look like a recognized <kind>-<YYMMDD>-<rand4>
 # ephemeral environment name - a hard safety rail (a typo must never be able to reach
-# "production"), not just a UX nicety. Each undeploy.sh still prompts for its own interactive
-# confirmation (no -auto-approve) before destroying anything.
+# "production"), not just a UX nicety. By default each undeploy.sh then prompts for its own
+# interactive confirmation (no -auto-approve) before destroying anything.
 #
-# Usage: ./teardown-ephemeral-env.sh <name>
+# --yes passes through to each undeploy.sh, replacing those prompts with -auto-approve, for
+# automation that has no stdin to answer them: the release pipeline's ephemeral acceptance
+# environments and the scheduled ephemeral sweep (mootmaker/designs/ci-cd-pipeline.md Rollout
+# steps 6 and 11). The name check above still applies and still runs first, so --yes can only ever
+# accelerate a teardown this script was already willing to perform - and each undeploy.sh refuses
+# "production"/"test" under --yes independently of that.
+#
+# Usage: ./teardown-ephemeral-env.sh <name> [--yes]
 set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
@@ -21,9 +28,20 @@ set -euo pipefail
 # with the BASH_SOURCE-based cd further below - see mootmaker-webapp/e2e/run.sh's fuller comment
 # on the same bug, found and fixed there 2026-08-22.
 
+assume_yes=0
+args=()
+for arg in "$@"; do
+  if [[ "${arg}" == "--yes" ]]; then
+    assume_yes=1
+  else
+    args+=("${arg}")
+  fi
+done
+set -- "${args[@]+"${args[@]}"}"
+
 name="${1:-}"
 if [[ -z "${name}" ]]; then
-  echo "Usage: ./teardown-ephemeral-env.sh <name>   (e.g. claude-260815-x7q2)" >&2
+  echo "Usage: ./teardown-ephemeral-env.sh <name> [--yes]   (e.g. claude-260815-x7q2)" >&2
   exit 1
 fi
 
@@ -105,7 +123,11 @@ for component in "${teardown_order[@]}"; do
     exit 1
   fi
   echo "=== Undeploying ${component} from '${name}' ===" >&2
-  "${dir}/undeploy.sh" "${name}"
+  undeploy_args=("${name}")
+  if [[ "${assume_yes}" == "1" ]]; then
+    undeploy_args+=(--yes)
+  fi
+  "${dir}/undeploy.sh" "${undeploy_args[@]}"
 done
 
 # terraform destroy empties a state file's contents but doesn't delete the S3 object itself, so
