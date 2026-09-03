@@ -1,11 +1,16 @@
 # mootmaker-test-infra
 
-Test infrastructure shared by every frontend: the ephemeral-environment lifecycle scripts, and the
-SES pipeline that lets tests read real email.
+Ephemeral-environment lifecycle scripts shared by every frontend: stand up/tear down a matched
+`mootmaker-api` + `mootmaker-webapp` pair under one environment name.
 
 **Start by reading [README.md](README.md)** and [testing-strategy.md](testing-strategy.md).
 
-Formerly `mootmaker-e2e`, before each frontend gained its own `e2e/` and `acceptance/` suites.
+Formerly `mootmaker-e2e`, before each frontend gained its own `e2e/` and `acceptance/` suites. Also
+used to own a persistent real-email testing pipeline, split out to
+[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing) 2026-09-03 —
+this repo is itself being renamed to
+[mootmaker-ephemeral-envs](https://github.com/geoffweatherall/mootmaker-ephemeral-envs) as part of
+that same split, to match its now-single purpose.
 
 ## Working here
 
