@@ -14,10 +14,21 @@ against its own real deployed environment, using whatever's idiomatic for that p
 only owns the things that are genuinely cross-repo:
 
 - **Ephemeral-environment lifecycle scripts** (`create-ephemeral-env.sh`,
-  `teardown-ephemeral-env.sh`, `cleanup-stale-envs.sh`, `list-ephemeral-envs.sh`) — these
+  `teardown-ephemeral-env.sh`, `cleanup-stale-envs.sh`, `sweep-stale-envs.sh`,
+  `list-ephemeral-envs.sh`) — these
   deploy/undeploy [mootmaker-api](https://github.com/geoffweatherall/mootmaker-api) and
   [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp) *together*, so they
   can't live inside either one on their own.
+
+  Two of those look similar and are not interchangeable. `cleanup-stale-envs.sh` is for a person at
+  a keyboard: it lists what it finds and asks about each one. `sweep-stale-envs.sh` is the
+  unattended counterpart run daily by
+  [`.github/workflows/sweep.yml`](.github/workflows/sweep.yml) — it **reports and changes nothing**
+  unless given `--destroy`, and it also finds two things the interactive script does not: state
+  objects left behind by an environment that was already destroyed, and Lambda log groups whose
+  function no longer exists. See
+  [mootmaker/designs/ci-cd-pipeline.md](https://github.com/geoffweatherall/mootmaker/blob/main/designs/ci-cd-pipeline.md)
+  rollout step 11.
 
 The real-email SES→SNS→SQS pipeline this repo used to also own moved to its own repo,
 [mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing), 2026-09-03 —

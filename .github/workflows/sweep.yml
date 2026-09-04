@@ -1,0 +1,102 @@
+# The scheduled ephemeral sweep - mootmaker/designs/ci-cd-pipeline.md, rollout step 11.
+#
+# REPORT-ONLY by design, not by oversight. The design asks for a trial period in which the sweep
+# reports what it would remove and removes nothing, graduating to automatic teardown only once that
+# has run clean with no false positives. Graduating means setting `destroy: true` below (or
+# dispatching once with the input) - the workflow is otherwise unchanged.
+#
+# Deliberately NOT shipped to CloudWatch, unlike every release stage. Decision 11 ships logs keyed
+# by release version, and this workflow has no version to key on - it is periodic, not part of any
+# one release. The design says so explicitly. The run's own log in Actions is the record.
+name: Sweep stale ephemeral environments
+
+on:
+  schedule:
+    # 06:00 UTC daily. After any overnight release has finished, and the 12-hour staleness
+    # threshold in the script means a run still going could not be swept regardless.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: 'Actually tear down what is found (default: report only)'
+        type: boolean
+        default: false
+      max_age_hours:
+        description: 'Only consider environments untouched for this many hours'
+        type: string
+        default: '12'
+
+# One sweep at a time. Two concurrent sweeps would race on the same teardowns, and the second
+# would find state the first had already emptied. Not cancel-in-progress: a sweep mid-teardown must
+# finish, or it strands the environment it was halfway through destroying - the exact failure this
+# workflow exists to clean up after.
+concurrency:
+  group: sweep-stale-envs
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # teardown-ephemeral-env.sh discovers what is deployed from S3 and then calls each
+      # component's own undeploy.sh, which it expects to find as a SIBLING directory. So the
+      # checkout layout has to mirror a developer workstation, not the usual single-repo one.
+      # Checked out even in report-only mode: graduating to --destroy should be a flag change, not
+      # a workflow rewrite that is untested until the first time it matters.
+      - uses: actions/checkout@v5
+        with:
+          repository: geoffweatherall/mootmaker-api
+          path: siblings/mootmaker-api
+      - uses: actions/checkout@v5
+        with:
+          repository: geoffweatherall/mootmaker-webapp
+          path: siblings/mootmaker-webapp
+      - uses: actions/checkout@v5
+        with:
+          repository: geoffweatherall/mootmaker-demo-data
+          path: siblings/mootmaker-demo-data
+
+      # undeploy.sh shells out to terraform; the runner has none preinstalled. Without this a
+      # --destroy sweep fails with "terraform: command not found" - which is how an ephemeral
+      # environment gets stranded in the first place.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::431071856068:role/mootmaker-release-github-actions-deploy
+          aws-region: us-east-1
+
+      # The scripts resolve siblings relative to their own location, so the sweep has to run from a
+      # directory that HAS those siblings. Copying the three scripts next to the checked-out
+      # component repos is what makes ../mootmaker-api resolve.
+      - name: Arrange the workstation-shaped layout the scripts expect
+        run: |
+          mkdir -p siblings/mootmaker-ephemeral-envs
+          cp sweep-stale-envs.sh teardown-ephemeral-env.sh siblings/mootmaker-ephemeral-envs/
+          chmod +x siblings/mootmaker-ephemeral-envs/*.sh
+
+      - name: Sweep
+        run: |
+          args=(--max-age-hours "${{ inputs.max_age_hours || '12' }}")
+          if [[ "${{ inputs.destroy }}" == "true" ]]; then
+            args+=(--destroy)
+          fi
+          ./siblings/mootmaker-ephemeral-envs/sweep-stale-envs.sh "${args[@]}" | tee sweep-report.txt
+
+      # The report is the entire point of the trial period, and an Actions log is gone in 90 days.
+      # Keeping it as an artifact is what makes "has run clean with no false positives" checkable
+      # against something other than memory.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sweep-report
+          path: sweep-report.txt
+          retention-days: 90
