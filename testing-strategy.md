@@ -2,7 +2,7 @@
 
 The overall cross-repo strategy (environments, the approach to reading Cognito's emails in tests,
 and how "vibe coding" shapes all of this) is recorded in
-[mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md).
+[mootmaker/docs/reference/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md).
 This document covers what's specific to this repo.
 
 ## Purpose
@@ -26,7 +26,7 @@ use-case-driven) test suites, in its own repo, using whatever's idiomatic there 
 Playwright for [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp), presumably
 Kotlin + Espresso/Compose for `mootmaker-android` later. See
 [mootmaker-webapp/testing-strategy.md](https://github.com/geoffweatherall/mootmaker-webapp/blob/main/testing-strategy.md)
-for that repo's suites, and [mootmaker/use-cases.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/use-cases.md)
+for that repo's suites, and [mootmaker/docs/reference/use-cases.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/use-cases.md)
 for the client-agnostic scenario list they draw on.
 
 **Known gap**: `create-ephemeral-env.sh` unconditionally deploys mootmaker-api *and*
@@ -37,7 +37,7 @@ actually exists and this becomes a real cost rather than a hypothetical one.
 
 ## Ephemeral environment scripts
 
-Decided 2026-08-15 (see [mootmaker/testing-strategy.md's Ephemeral environment
+Decided 2026-08-15 (see [mootmaker/docs/reference/testing-strategy.md's Ephemeral environment
 lifecycle](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md#ephemeral-environment-lifecycle)
 for how this fits the overall policy). **Built and tested against real AWS environments,
 2026-08-15**; a fourth script (`list-ephemeral-envs.sh`) added 2026-08-19, alongside real
@@ -144,7 +144,7 @@ exact `claude`/`e2e` enum. In use today:
 
 The `kind` budget is capped at 8 characters (with `web-e2e`/`web-acc` at 7, leaving a little
 margin) because `-YYMMDD-<rand4>` is a fixed 12 characters and the overall environment-name ceiling
-is 22 (see mootmaker/testing-strategy.md#environments) — `kind` alone could theoretically stretch to
+is 22 (see mootmaker/docs/reference/testing-strategy.md#environments) — `kind` alone could theoretically stretch to
 10, but 8 leaves a bit of safety margin below that hard limit. Verified against the real scripts
 (not just the regex in isolation): both new-shape rejections (`create-ephemeral-env.sh` with an
 invalid `kind`, `teardown-ephemeral-env.sh` against `test`) and acceptances (`web-e2e-<date>-<rand>`
