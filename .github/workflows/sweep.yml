@@ -85,6 +85,10 @@ jobs:
 
       - name: Sweep
         run: |
+          # pipefail because of the `| tee` below. Without it the step's exit status is tee's, so a
+          # sweep that died on an AWS permissions error reports green having produced nothing -
+          # which is exactly what happened on the first CI run of this workflow.
+          set -o pipefail
           args=(--max-age-hours "${{ inputs.max_age_hours || '12' }}")
           if [[ "${{ inputs.destroy }}" == "true" ]]; then
             args+=(--destroy)
