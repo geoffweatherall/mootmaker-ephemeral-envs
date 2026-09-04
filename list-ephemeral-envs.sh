@@ -158,6 +158,28 @@ check_against_aws() {
   esac
 }
 
+# Read every state file's resource count UP FRONT, in parallel, rather than one at a time inside
+# the display loop below. This is what made the script take over three minutes (#3): with ~105
+# state objects and each `aws s3 cp` costing ~1.9s almost entirely in AWS CLI process startup
+# (Python import time, not network - measured, not assumed), the serial version spent ~200s doing
+# nothing but launching processes. The terraform refresh was never the cause; it is skipped
+# entirely for empty state, and by 2026-09 almost every leftover state file is empty.
+#
+# -P 10 rather than unbounded: each job is a separate CLI process, and hundreds at once would
+# trade the startup cost for memory pressure and S3 throttling. Ten is enough that startup stops
+# being the bottleneck.
+echo "Reading ${#rows[@]} state file(s) in parallel..." >&2
+counts_dir="${detail_dir}/counts"
+mkdir -p "${counts_dir}"
+printf '%s\n' "${rows[@]}" | cut -d$'\t' -f1 | xargs -P 10 -I{} bash -c '
+  key="$1"
+  # The key contains slashes; flatten them so it can name a file.
+  out="$2/${key//\//__}"
+  aws s3 cp "s3://$3/${key}" - 2>/dev/null | jq ".resources | length" 2>/dev/null > "${out}" || true
+  # An unreadable or non-JSON state leaves an empty file, which reads back as "?" below - the
+  # same outcome the serial version produced via its `|| echo "?"`.
+' _ {} "${counts_dir}" "${bucket}"
+
 echo ""
 printf '%-24s %-32s %-9s %-16s %s\n' "ENVIRONMENT" "PROJECT" "RESOURCES" "AWS CHECK" "LAST MODIFIED"
 printf '%-24s %-32s %-9s %-16s %s\n' "-----------" "-------" "---------" "---------" "-------------"
@@ -170,7 +192,8 @@ for row in "${rows[@]}"; do
   project="${key#*/}"
   project="${project%/terraform.tfstate}"
 
-  resource_count="$(aws s3 cp "s3://${bucket}/${key}" - 2>/dev/null | jq '.resources | length' 2>/dev/null || echo "?")"
+  resource_count="$(cat "${counts_dir}/${key//\//__}" 2>/dev/null || true)"
+  [[ -z "${resource_count}" ]] && resource_count="?"
 
   if [[ "${resource_count}" == "0" ]]; then
     label="0 (empty)"
