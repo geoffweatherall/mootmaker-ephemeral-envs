@@ -175,6 +175,68 @@ while IFS=$'\t' read -r group_name created_ms; do
 done < "${workdir}/loggroups.txt"
 
 # ---------------------------------------------------------------------------
+# AWS resources with no Terraform state behind them
+# ---------------------------------------------------------------------------
+#
+# Everything above reads Terraform STATE, so it can only see resources Terraform knows about. A
+# resource stranded by a partial destroy is in no state file at all - invisible to every other
+# check in this script, and the class most likely to still be costing money.
+#
+# Found by NAME instead, which the <kind>-<YYMMDD>-<rand4> convention makes tractable. If
+# default_tags ever lands on the provider configs, prefer resourcegroupstaggingapi over
+# enumerating services one at a time: it is a single call, and it catches resources whose names do
+# not happen to carry the environment.
+#
+# REPORTED, NEVER DELETED - deliberately, and not as a placeholder. An empty state object is
+# unambiguous garbage; a DynamoDB table is not, and an unattended sweep has nobody watching it.
+# The design's own rollout graduates report-only checks to automatic ones after a clean trial
+# period, and this one has not had its trial yet.
+
+orphan_resources=()
+
+# An environment that appears in the state listing is already covered by the categories above,
+# whatever condition it is in - including one currently locked or too young to touch. Only an
+# environment with NO state at all reaches this list.
+resource_env_has_state() {
+  local env="$1"
+  printf '%s\n' "${envs[@]+"${envs[@]}"}" | grep -qxF "${env}"
+}
+
+record_orphan_resource() {
+  local kind="$1" name="$2" env
+  [[ "${name}" =~ ^([a-z][a-z0-9-]{0,7}-[0-9]{6}-[a-z0-9]{4})- ]] || return 0
+  env="${BASH_REMATCH[1]}"
+  resource_env_has_state "${env}" && return 0
+  orphan_resources+=("${kind} ${name} (no state for '${env}')")
+}
+
+# Lambda function names are already listed above for the log-group check; reused rather than
+# fetched twice.
+while IFS= read -r fn; do
+  [[ -n "${fn}" ]] && record_orphan_resource "lambda        " "${fn}"
+done < "${workdir}/functions.txt"
+
+while IFS= read -r table; do
+  [[ -n "${table}" ]] && record_orphan_resource "dynamodb-table" "${table}"
+done < <(aws dynamodb list-tables --query 'TableNames[]' --output text 2>/dev/null | tr '\t' '\n')
+
+while IFS= read -r b; do
+  [[ -n "${b}" ]] && record_orphan_resource "s3-bucket     " "${b}"
+done < <(aws s3api list-buckets --query 'Buckets[].Name' --output text 2>/dev/null | tr '\t' '\n')
+
+while IFS= read -r role; do
+  [[ -n "${role}" ]] && record_orphan_resource "iam-role      " "${role}"
+done < <(aws iam list-roles --query 'Roles[].RoleName' --output text 2>/dev/null | tr '\t' '\n')
+
+while IFS= read -r pool; do
+  [[ -n "${pool}" ]] && record_orphan_resource "cognito-pool  " "${pool}"
+done < <(aws cognito-idp list-user-pools --max-results 60 --query 'UserPools[].Name' --output text 2>/dev/null | tr '\t' '\n')
+
+while IFS= read -r api; do
+  [[ -n "${api}" ]] && record_orphan_resource "appsync-api   " "${api}"
+done < <(aws appsync list-graphql-apis --query 'graphqlApis[].name' --output text 2>/dev/null | tr '\t' '\n')
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 
@@ -200,6 +262,12 @@ echo "  Also orphaned, but these hold real history from functions that were cons
 echo "  Not swept unless --include-named-envs is given."
 listing "${orphan_named[@]+"${orphan_named[@]}"}"
 
+section "AWS resources with no Terraform state behind them"
+echo "  Named like an ephemeral environment, but that environment has no state file at all."
+echo "  Stranded by a partial destroy, and invisible to every state-based check above."
+echo "  Reported, never deleted - see the comment above this section for why."
+listing "${orphan_resources[@]+"${orphan_resources[@]}"}"
+
 section "Skipped"
 echo "  In use (Terraform holds the lock):"
 listing "${locked_envs[@]+"${locked_envs[@]}"}"
@@ -209,7 +277,7 @@ echo "  Log groups not recognisable as this project's - reported, never deleted:
 listing "${orphan_unknown[@]+"${orphan_unknown[@]}"}"
 
 echo ""
-echo "Summary: ${#live_envs[@]} stranded, ${#empty_envs[@]} leftover state objects, ${#orphan_ephemeral[@]} ephemeral log groups, ${#orphan_named[@]} retired-function log groups."
+echo "Summary: ${#live_envs[@]} stranded, ${#empty_envs[@]} leftover state objects, ${#orphan_ephemeral[@]} ephemeral log groups, ${#orphan_named[@]} retired-function log groups, ${#orphan_resources[@]} stateless resources (reported only)."
 
 if [[ "${mode}" == "report" ]]; then
   echo ""
