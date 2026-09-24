@@ -15,7 +15,7 @@
 #
 # --yes passes through to each undeploy.sh, replacing those prompts with -auto-approve, for
 # automation that has no stdin to answer them: the release pipeline's ephemeral acceptance
-# environments and the scheduled ephemeral sweep (mootmaker/designs/ci-cd-pipeline.md Rollout
+# environments and the scheduled ephemeral sweep (mootmaker/designs/archive/ci-cd-pipeline.md Rollout
 # steps 6 and 11). The name check above still applies and still runs first, so --yes can only ever
 # accelerate a teardown this script was already willing to perform - and each undeploy.sh refuses
 # "production"/"test" under --yes independently of that.

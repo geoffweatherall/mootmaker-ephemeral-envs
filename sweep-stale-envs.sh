@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The scheduled ephemeral sweep (mootmaker/designs/ci-cd-pipeline.md, rollout step 11).
+# The scheduled ephemeral sweep (mootmaker/designs/archive/ci-cd-pipeline.md, rollout step 11).
 #
 # Non-interactive counterpart to cleanup-stale-envs.sh. That script is for a human at a keyboard:
 # it lists what it finds and asks per environment. This one runs unattended on a schedule, so it

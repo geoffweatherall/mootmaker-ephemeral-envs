@@ -1,4 +1,4 @@
-# The scheduled ephemeral sweep - mootmaker/designs/ci-cd-pipeline.md, rollout step 11.
+# The scheduled ephemeral sweep - mootmaker/designs/archive/ci-cd-pipeline.md, rollout step 11.
 #
 # REPORT-ONLY by design, not by oversight. The design asks for a trial period in which the sweep
 # reports what it would remove and removes nothing, graduating to automatic teardown only once that

@@ -27,7 +27,7 @@ only owns the things that are genuinely cross-repo:
   unless given `--destroy`, and it also finds two things the interactive script does not: state
   objects left behind by an environment that was already destroyed, and Lambda log groups whose
   function no longer exists. See
-  [mootmaker/designs/ci-cd-pipeline.md](https://github.com/geoffweatherall/mootmaker/blob/main/designs/ci-cd-pipeline.md)
+  [mootmaker/designs/archive/ci-cd-pipeline.md](https://github.com/geoffweatherall/mootmaker/blob/main/designs/archive/ci-cd-pipeline.md)
   rollout step 11.
 
 The real-email SES→SNS→SQS pipeline this repo used to also own moved to its own repo,
