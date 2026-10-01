@@ -46,7 +46,7 @@ updates) — see [Naming convention](#naming-convention) and the `list-ephemeral
 below.
 
 Four separate bash scripts, matching the one-script-one-job convention already used by
-`deploy.sh`/`undeploy.sh`/`authenticate.sh`/`verify.sh` elsewhere in the project. Bash rather than
+`deploy.sh`/`undeploy.sh`/`verify.sh` elsewhere in the project. Bash rather than
 a Node/TS tool, chiefly for consistency with every other operational script in the project. The
 first three mostly need to shell out to mootmaker-api's and mootmaker-webapp's existing
 `deploy.sh`/`undeploy.sh` rather than reimplement any deploy mechanics themselves;
