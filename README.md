@@ -24,9 +24,11 @@ only owns the things that are genuinely cross-repo:
   a keyboard: it lists what it finds and asks about each one. `sweep-stale-envs.sh` is the
   unattended counterpart run daily by
   [`.github/workflows/sweep.yml`](.github/workflows/sweep.yml) — it **reports and changes nothing**
-  unless given `--destroy`, and it also finds two things the interactive script does not: state
-  objects left behind by an environment that was already destroyed, and Lambda log groups whose
-  function no longer exists. See
+  unless given `--destroy`, with one exception: AppSync log groups whose API no longer exists are
+  always deleted ([mootmaker#71](https://github.com/geoffweatherall/mootmaker/issues/71)). It also
+  finds things the interactive script does not: state objects left behind by an environment that
+  was already destroyed, Lambda and AppSync log groups whose function or API no longer exists, and
+  resources named for an environment that has no state at all. See
   [mootmaker/designs/archive/ci-cd-pipeline.md](https://github.com/geoffweatherall/mootmaker/blob/main/designs/archive/ci-cd-pipeline.md)
   rollout step 11.
 
