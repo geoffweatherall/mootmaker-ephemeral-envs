@@ -65,6 +65,11 @@ jobs:
         with:
           repository: geoffweatherall/mootmaker-demo-data
           path: siblings/mootmaker-demo-data
+      # For the account-wide accumulation check below, which lives with the other account checks.
+      - uses: actions/checkout@v5
+        with:
+          repository: geoffweatherall/mootmaker-bootstrap-aws-accounts
+          path: siblings/mootmaker-bootstrap-aws-accounts
 
       # undeploy.sh shells out to terraform; the runner has none preinstalled. Without this a
       # --destroy sweep fails with "terraform: command not found" - which is how an ephemeral
@@ -98,6 +103,15 @@ jobs:
             args+=(--destroy)
           fi
           ./siblings/mootmaker-ephemeral-envs/sweep-stale-envs.sh "${args[@]}" | tee sweep-report.txt
+
+      # Anything growing with time rather than use (mootmaker#77): log groups without retention,
+      # Lambda versions past what pruning keeps, a stalled history-cleanup job. Rides on this
+      # schedule because it is the daily account-hygiene run and already holds a role that can make
+      # every call. always() so a sweep failure does not hide it; it exits 1 on a finding, which
+      # turns this run red - that is the notification, with no paid CloudWatch alarm behind it.
+      - name: Accumulation check
+        if: always()
+        run: ./siblings/mootmaker-bootstrap-aws-accounts/check-accumulation.sh
 
       # The report is the entire point of the trial period, and an Actions log is gone in 90 days.
       # Keeping it as an artifact is what makes "has run clean with no false positives" checkable
