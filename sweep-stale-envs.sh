@@ -3,11 +3,12 @@
 #
 # Non-interactive counterpart to cleanup-stale-envs.sh. That script is for a human at a keyboard:
 # it lists what it finds and asks per environment. This one runs unattended on a schedule, so it
-# REPORTS BY DEFAULT and only acts when given --destroy - the design asks for report-only first,
+# REPORTS BY DEFAULT and only acts when given --destroy (one exception: orphaned AppSync log
+# groups, deleted in every mode - see that section) - the design asks for report-only first,
 # graduating to automatic teardown after a clean trial period, and this is the flag that graduates
 # it. Neither script replaces the other.
 #
-# Three separate things get swept, deliberately reported apart because they mean different things:
+# Four separate things get swept, deliberately reported apart because they mean different things:
 #
 #   1. Ephemeral environments with live infrastructure. Real AWS resources, really costing money,
 #      stranded by an interrupted run. This is what the design was written for.
@@ -21,6 +22,10 @@
 #      accumulate forever and retain forever (mootmaker#47). Also noise rather than spend: the whole
 #      account's log storage is a few MB. The cost is that describe-log-groups and any Logs Insights
 #      query widened past the release-pipeline group have to wade through hundreds of dead groups.
+#   4. Orphaned AppSync log groups - a group whose API no longer exists, re-created by AppSync
+#      during teardown (mootmaker#71). The one category deleted in every mode.
+#
+# Resources named for an environment with no state at all are also reported, never deleted.
 #
 # WHAT KEEPS IT FROM DELETING SOMETHING A RUNNING BUILD NEEDS - three independent guards, because
 # an unattended destroy has no one watching it:
@@ -175,6 +180,42 @@ while IFS=$'\t' read -r group_name created_ms; do
 done < "${workdir}/loggroups.txt"
 
 # ---------------------------------------------------------------------------
+# Orphaned AppSync log groups
+# ---------------------------------------------------------------------------
+#
+# mootmaker-api's Terraform names AppSync's log group after the API's id, so the group depends on
+# the API and terraform destroy deletes the group FIRST. A request arriving in the gap before the
+# API itself goes (in practice a 401 from a client whose Cognito pool has just been destroyed)
+# makes AppSync re-create the group, untracked and with never-expire retention (mootmaker#71). No
+# ordering in Terraform can fix that, because the dependency cannot be reversed.
+#
+# DELETED IN EVERY MODE, including report-only. That is a deliberate exception to the trial
+# period, agreed on mootmaker#71: whether a group is an orphan is a fact, not a judgement - its API
+# id either resolves or it does not - and a group with no API behind it can never be written to
+# legitimately again. The other categories involve inferring that an environment is abandoned,
+# which is what the trial period exists to prove.
+#
+# Every AppSync API in this account is this project's, so no name filter applies. Groups younger
+# than an hour are left alone, like the Lambda ones above: AppSync can create the group a moment
+# before list-graphql-apis would show a brand-new API.
+
+aws appsync list-graphql-apis --query 'graphqlApis[].apiId' --output text \
+  | tr '\t' '\n' | sed '/^$/d' | sort > "${workdir}/appsync-apis.txt"
+
+aws logs describe-log-groups --log-group-name-prefix /aws/appsync/apis/ \
+  --query 'logGroups[].[logGroupName,creationTime]' --output text > "${workdir}/appsync-loggroups.txt"
+
+orphan_appsync=()
+
+while IFS=$'\t' read -r group_name created_ms; do
+  [[ -z "${group_name}" ]] && continue
+  api_id="${group_name#/aws/appsync/apis/}"
+  grep -qxF "${api_id}" "${workdir}/appsync-apis.txt" && continue
+  (( created_ms > young_group_cutoff_ms )) && continue
+  orphan_appsync+=("${group_name}")
+done < "${workdir}/appsync-loggroups.txt"
+
+# ---------------------------------------------------------------------------
 # AWS resources with no Terraform state behind them
 # ---------------------------------------------------------------------------
 #
@@ -262,6 +303,11 @@ echo "  Also orphaned, but these hold real history from functions that were cons
 echo "  Not swept unless --include-named-envs is given."
 listing "${orphan_named[@]+"${orphan_named[@]}"}"
 
+section "Orphaned AppSync log groups"
+echo "  Their API is gone; AppSync re-created the group during teardown (mootmaker#71)."
+echo "  Deleted in every mode, report-only included - see the comment above that section."
+listing "${orphan_appsync[@]+"${orphan_appsync[@]}"}"
+
 section "AWS resources with no Terraform state behind them"
 echo "  Named like an ephemeral environment, but that environment has no state file at all."
 echo "  Stranded by a partial destroy, and invisible to every state-based check above."
@@ -277,11 +323,29 @@ echo "  Log groups not recognisable as this project's - reported, never deleted:
 listing "${orphan_unknown[@]+"${orphan_unknown[@]}"}"
 
 echo ""
-echo "Summary: ${#live_envs[@]} stranded, ${#empty_envs[@]} leftover state objects, ${#orphan_ephemeral[@]} ephemeral log groups, ${#orphan_named[@]} retired-function log groups, ${#orphan_resources[@]} stateless resources (reported only)."
+echo "Summary: ${#live_envs[@]} stranded, ${#empty_envs[@]} leftover state objects, ${#orphan_ephemeral[@]} ephemeral log groups, ${#orphan_named[@]} retired-function log groups, ${#orphan_appsync[@]} AppSync log groups, ${#orphan_resources[@]} stateless resources (reported only)."
+
+# ---------------------------------------------------------------------------
+# Always: orphaned AppSync log groups
+# ---------------------------------------------------------------------------
+
+failures=0
+
+for group in "${orphan_appsync[@]+"${orphan_appsync[@]}"}"; do
+  echo "--- Deleting orphaned AppSync log group ${group} ---"
+  if ! aws logs delete-log-group --log-group-name "${group}"; then
+    echo "Failed to delete log group ${group}." >&2
+    failures=$(( failures + 1 ))
+  fi
+done
 
 if [[ "${mode}" == "report" ]]; then
   echo ""
-  echo "Report-only. Nothing was changed. Re-run with --destroy to act on the first three sections."
+  if (( failures > 0 )); then
+    echo "Report-only, but ${failures} orphaned AppSync log group deletion(s) failed." >&2
+    exit 1
+  fi
+  echo "Report-only. Nothing else was changed. Re-run with --destroy to act on the first three sections."
   exit 0
 fi
 
@@ -291,7 +355,6 @@ fi
 
 echo ""
 echo "=== --destroy given: acting ==="
-failures=0
 
 for entry in "${live_envs[@]+"${live_envs[@]}"}"; do
   env="${entry%% *}"

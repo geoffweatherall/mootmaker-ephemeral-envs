@@ -5,6 +5,10 @@
 # has run clean with no false positives. Graduating means setting `destroy: true` below (or
 # dispatching once with the input) - the workflow is otherwise unchanged.
 #
+# One narrow exception runs in every mode: AppSync log groups whose API no longer exists are
+# deleted (mootmaker#71), since that is a fact the script can check rather than a judgement about
+# whether an environment is abandoned.
+#
 # Deliberately NOT shipped to CloudWatch, unlike every release stage. Decision 11 ships logs keyed
 # by release version, and this workflow has no version to key on - it is periodic, not part of any
 # one release. The design says so explicitly. The run's own log in Actions is the record.
