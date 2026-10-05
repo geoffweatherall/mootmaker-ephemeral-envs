@@ -71,6 +71,11 @@ done
 echo ""
 
 for env in "${envs[@]}"; do
+  # A kept environment (keep-env.sh) is still offered - a person here can decide - but with the
+  # reason in front of them, since someone said it should stay.
+  if echo "${keys_json}" | jq -e --arg k "${env}/KEEP" 'index($k) != null' >/dev/null; then
+    echo "'${env}' is marked as KEPT: $(aws s3 cp "s3://${bucket}/${env}/KEEP" - 2>/dev/null | sed -n 's/^reason: //p')"
+  fi
   read -r -p "Tear down '${env}'? [y/N] " confirm
   case "${confirm}" in
     y|Y|yes|YES|Yes)

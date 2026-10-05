@@ -12,7 +12,7 @@
 # persistent, shared infrastructure (see testing-strategy.md), not created
 # per environment.
 #
-# Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data]
+# Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data] [--keep "<reason>"]
 #   claude (default) - Claude's own interactive dev-session environments,
 #                       reused for a whole session rather than per-task
 #   <anything else>  - an automated test suite's own run, named for exactly
@@ -20,6 +20,12 @@
 #                       mootmaker-webapp's e2e/acceptance suites (see their
 #                       own run.sh), "and-e2e"/"and-acc" expected once
 #                       mootmaker-android gains the same pattern
+#
+#   --keep "<reason>" - mark the environment as deliberately kept once it is up
+#                       (keep-env.sh), so the scheduled sweep leaves it alone
+#                       however long it sits idle. Written only after a
+#                       SUCCESSFUL create, so a half-built environment is
+#                       still swept.
 #
 #   --with-demo-data - also deploy mootmaker-demo-data, and seed the
 #                       environment by invoking it once. Without this the
@@ -37,16 +43,25 @@ set -euo pipefail
 # same bug, found and fixed there 2026-08-22.
 
 with_demo_data=""
+keep_reason=""
 positional=()
-for arg in "$@"; do
-  case "${arg}" in
-    --with-demo-data) with_demo_data="true" ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --with-demo-data) with_demo_data="true"; shift ;;
+    --keep)
+      keep_reason="${2:-}"
+      if [[ -z "${keep_reason// /}" ]]; then
+        echo "--keep needs a reason, e.g. --keep \"left up for Geoff to inspect\"" >&2
+        exit 1
+      fi
+      shift 2
+      ;;
     -*)
-      echo "Unknown option: ${arg}" >&2
-      echo "Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data]" >&2
+      echo "Unknown option: $1" >&2
+      echo "Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data] [--keep \"<reason>\"]" >&2
       exit 1
       ;;
-    *) positional+=("${arg}") ;;
+    *) positional+=("$1"); shift ;;
   esac
 done
 
@@ -131,6 +146,10 @@ if [[ -n "${with_demo_data}" ]]; then
 fi
 
 trap - ERR
+
+if [[ -n "${keep_reason}" ]]; then
+  "${script_dir}/keep-env.sh" "${name}" "${keep_reason}"
+fi
 
 echo "Ephemeral environment '${name}' is up." >&2
 echo "${name}"

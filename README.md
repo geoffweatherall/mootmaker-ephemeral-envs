@@ -15,7 +15,7 @@ only owns the things that are genuinely cross-repo:
 
 - **Ephemeral-environment lifecycle scripts** (`create-ephemeral-env.sh`,
   `teardown-ephemeral-env.sh`, `cleanup-stale-envs.sh`, `sweep-stale-envs.sh`,
-  `list-ephemeral-envs.sh`) — these
+  `list-ephemeral-envs.sh`, `keep-env.sh` / `unkeep-env.sh`) — these
   deploy/undeploy [mootmaker-api](https://github.com/geoffweatherall/mootmaker-api) and
   [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp) *together*, so they
   can't live inside either one on their own.
@@ -23,14 +23,33 @@ only owns the things that are genuinely cross-repo:
   Two of those look similar and are not interchangeable. `cleanup-stale-envs.sh` is for a person at
   a keyboard: it lists what it finds and asks about each one. `sweep-stale-envs.sh` is the
   unattended counterpart run daily by
-  [`.github/workflows/sweep.yml`](.github/workflows/sweep.yml) — it **reports and changes nothing**
-  unless given `--destroy`, with one exception: AppSync log groups whose API no longer exists are
-  always deleted ([mootmaker#71](https://github.com/geoffweatherall/mootmaker/issues/71)). It also
+  [`.github/workflows/sweep.yml`](.github/workflows/sweep.yml). Run by hand it **reports and
+  changes nothing** unless given `--destroy`; the schedule passes `--destroy`, and has since it
+  graduated from its report-only trial on 2026-10-05
+  ([mootmaker#51](https://github.com/geoffweatherall/mootmaker/issues/51)). It tears down an
+  ephemeral environment only once nothing under its state prefix has been written for **48 hours**,
+  and never one carrying a **KEEP marker**. One exception runs even in report-only mode: AppSync log
+  groups whose API no longer exists are always deleted
+  ([mootmaker#71](https://github.com/geoffweatherall/mootmaker/issues/71)). It also
   finds things the interactive script does not: state objects left behind by an environment that
   was already destroyed, Lambda and AppSync log groups whose function or API no longer exists, and
   resources named for an environment that has no state at all. See
   [mootmaker/designs/archive/ci-cd-pipeline.md](https://github.com/geoffweatherall/mootmaker/blob/main/designs/archive/ci-cd-pipeline.md)
   rollout step 11.
+
+  **Keeping an environment on purpose.** The sweep's age guard measures state *writes*, not use, so
+  an environment someone is testing in by hand looks idle. During the trial it flagged a
+  deliberately kept environment and a person's own as stranded. To leave one up:
+
+  ```bash
+  ./keep-env.sh <name> "left up for Geoff to inspect the new layout"   # or: create-ephemeral-env.sh --keep "<reason>"
+  ./unkeep-env.sh <name>                                               # the sweep applies again
+  ```
+
+  The marker is `s3://remote-state-<account>/<name>/KEEP`, holding the reason, who kept it and
+  when. The sweep lists every kept environment with that reason and its age on every run, so a keep
+  nobody remembers is still visible. `teardown-ephemeral-env.sh` removes the marker along with the
+  environment's state.
 
 The real-email SES→SNS→SQS pipeline this repo used to also own moved to its own repo,
 [mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing), 2026-09-03 —

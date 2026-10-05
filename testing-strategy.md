@@ -65,6 +65,11 @@ first three mostly need to shell out to mootmaker-api's and mootmaker-webapp's e
   that's a separate, persistent, always-on piece of infrastructure (see above), not something
   created per environment.
 
+- **`keep-env.sh <name> "<reason>"`** / **`unkeep-env.sh <name>`** (added 2026-10-05,
+  mootmaker#51): write or remove the `<name>/KEEP` marker that makes the scheduled sweep skip an
+  environment however long it sits idle. `create-ephemeral-env.sh --keep "<reason>"` does the same
+  once a create succeeds. See [README.md](README.md) for why it exists.
+
 - **`teardown-ephemeral-env.sh <name>`**: tears down one specific, already-known environment —
   calls `undeploy.sh <name>` for mootmaker-webapp then mootmaker-api. Refuses to run unless `name`
   matches `^[a-z][a-z0-9-]{0,7}-[0-9]{6}-[a-z0-9]{4}$` exactly — a hard safety rail so a typo can

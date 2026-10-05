@@ -1,9 +1,14 @@
 # The scheduled ephemeral sweep - mootmaker/designs/archive/ci-cd-pipeline.md, rollout step 11.
 #
-# REPORT-ONLY by design, not by oversight. The design asks for a trial period in which the sweep
-# reports what it would remove and removes nothing, graduating to automatic teardown only once that
-# has run clean with no false positives. Graduating means setting `destroy: true` below (or
-# dispatching once with the input) - the workflow is otherwise unchanged.
+# GRADUATED to automatic teardown 2026-10-05 (mootmaker#51). The design asked for a report-only
+# trial first; a month of daily reports (2026-09-04 to 10-04) found every category behaving, with
+# one real false positive: environments a person still wanted looked exactly like abandoned ones,
+# because the age guard measures state writes rather than use. Two changes answered it - a KEEP
+# marker (keep-env.sh) the sweep honours, and an age guard of 48h instead of 12h - and the sweep
+# then graduated. Every report is still kept as an artifact for 90 days.
+#
+# Scheduled runs always pass --destroy. A manual dispatch defaults to it too, and can untick it for
+# a report-only look.
 #
 # One narrow exception runs in every mode: AppSync log groups whose API no longer exists are
 # deleted (mootmaker#71), since that is a fact the script can check rather than a judgement about
@@ -16,19 +21,19 @@ name: Sweep stale ephemeral environments
 
 on:
   schedule:
-    # 06:00 UTC daily. After any overnight release has finished, and the 12-hour staleness
+    # 06:00 UTC daily. After any overnight release has finished, and the 48-hour staleness
     # threshold in the script means a run still going could not be swept regardless.
     - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       destroy:
-        description: 'Actually tear down what is found (default: report only)'
+        description: 'Actually tear down what is found (untick for a report-only run)'
         type: boolean
-        default: false
+        default: true
       max_age_hours:
         description: 'Only consider environments untouched for this many hours'
         type: string
-        default: '12'
+        default: '48'
 
 # One sweep at a time. Two concurrent sweeps would race on the same teardowns, and the second
 # would find state the first had already emptied. Not cancel-in-progress: a sweep mid-teardown must
@@ -98,8 +103,11 @@ jobs:
           # sweep that died on an AWS permissions error reports green having produced nothing -
           # which is exactly what happened on the first CI run of this workflow.
           set -o pipefail
-          args=(--max-age-hours "${{ inputs.max_age_hours || '12' }}")
-          if [[ "${{ inputs.destroy }}" == "true" ]]; then
+          # A scheduled run has no inputs at all - both expressions below are empty for it - so the
+          # schedule's own behaviour is spelled out here rather than inherited from input defaults,
+          # which only apply to a manual dispatch.
+          args=(--max-age-hours "${{ inputs.max_age_hours || '48' }}")
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.destroy }}" == "true" ]]; then
             args+=(--destroy)
           fi
           ./siblings/mootmaker-ephemeral-envs/sweep-stale-envs.sh "${args[@]}" | tee sweep-report.txt
@@ -113,9 +121,9 @@ jobs:
         if: always()
         run: ./siblings/mootmaker-bootstrap-aws-accounts/check-accumulation.sh
 
-      # The report is the entire point of the trial period, and an Actions log is gone in 90 days.
-      # Keeping it as an artifact is what makes "has run clean with no false positives" checkable
-      # against something other than memory.
+      # The report was the entire point of the trial period, and is now the record of what an
+      # unattended run destroyed. An Actions log is gone in 90 days; keeping it as an artifact is
+      # what makes "what did the sweep remove, and why" answerable from something other than memory.
       - uses: actions/upload-artifact@v6
         if: always()
         with:
