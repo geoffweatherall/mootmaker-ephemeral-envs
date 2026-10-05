@@ -24,8 +24,11 @@ that same split, to match its now-single purpose.
   with tools deployed is *not* fully torn down by the script named "tear down this environment".
   Undeploy the tools separately first.
 - **Ephemeral environments leak.** Four survived a single session in August 2026 and were found the
-  next morning still running. Anything older than 24 hours is a leak. Nothing automated catches this
-  yet.
+  next morning still running. Anything older than 24 hours is a leak. The daily sweep
+  (`sweep.yml`) tears down any ephemeral environment idle for 48 hours, unless it carries a KEEP
+  marker — so an environment you mean to leave up gets `./keep-env.sh <name> "<reason>"` (or
+  `create-ephemeral-env.sh --keep "<reason>"`), and one you forget to tear down is not your only
+  line of defence.
 - **Verify teardown against live AWS**, not the script's exit code.
 
 ---

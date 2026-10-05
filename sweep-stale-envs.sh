@@ -6,7 +6,8 @@
 # REPORTS BY DEFAULT and only acts when given --destroy (one exception: orphaned AppSync log
 # groups, deleted in every mode - see that section) - the design asks for report-only first,
 # graduating to automatic teardown after a clean trial period, and this is the flag that graduates
-# it. Neither script replaces the other.
+# it. The schedule graduated 2026-10-05 (mootmaker#51): sweep.yml passes --destroy on every scheduled
+# run. Run by hand, it still reports only. Neither script replaces the other.
 #
 # Four separate things get swept, deliberately reported apart because they mean different things:
 #
@@ -28,21 +29,27 @@
 # Resources named for an environment with no state at all are also reported, never deleted.
 #
 # WHAT KEEPS IT FROM DELETING SOMETHING A RUNNING BUILD NEEDS - three independent guards, because
-# an unattended destroy has no one watching it:
+# an unattended destroy has no one watching it - plus one for an environment a PERSON still needs:
 #
 #   - The name must match <kind>-<YYMMDD>-<rand4>. "test" and "production" cannot match, and
 #     teardown-ephemeral-env.sh re-checks this itself before touching anything.
 #   - A .tflock object anywhere under the environment's state prefix means Terraform holds the lock
 #     right now (backend.hcl sets use_lockfile = true). Skipped outright, whatever its age.
 #   - Nothing is touched until every object under its prefix is older than --max-age-hours
-#     (default 12). A release build writes state at apply and again at destroy, and GitHub caps a
-#     job at 6 hours, so 12 is comfortably beyond any run that is still going.
+#     (default 48). A release build writes state at apply and again at destroy, and GitHub caps a
+#     job at 6 hours, so even 12 would be beyond any run still going. 48 is for people: the guard
+#     measures state WRITES, not use, so an environment someone is testing in by hand looks idle.
+#     At 12, every environment left up overnight would go; at 48 it survives a night and a day.
+#   - A KEEP object under the prefix (keep-env.sh, or create-ephemeral-env.sh --keep) skips the
+#     environment whatever its age, and the report lists it with its reason and how long it has been
+#     kept. The trial period showed this was needed: the sweep flagged both a deliberately kept
+#     environment and a person's own as "stranded" (mootmaker#51).
 #
 # Usage: ./sweep-stale-envs.sh [--destroy] [--max-age-hours N] [--include-named-envs]
 set -euo pipefail
 
 mode="report"
-max_age_hours=12
+max_age_hours=48
 include_named_envs=0
 
 while [[ $# -gt 0 ]]; do
@@ -98,6 +105,7 @@ mapfile -t envs < <(cut -f1 "${workdir}/keys.txt" | cut -d/ -f1 | grep -E "${eph
 live_envs=()      # real resources, need a teardown
 empty_envs=()     # state already destroyed, only the S3 object is left
 locked_envs=()    # Terraform holds the lock right now
+kept_envs=()      # marked with keep-env.sh - skipped whatever their age
 young_envs=()     # touched too recently to be sure it is not in use
 
 for env in "${envs[@]+"${envs[@]}"}"; do
@@ -105,6 +113,21 @@ for env in "${envs[@]+"${envs[@]}"}"; do
 
   if cut -f1 "${workdir}/env-keys.txt" | grep -q '\.tflock$'; then
     locked_envs+=("${env}")
+    continue
+  fi
+
+  # Checked before age, so a kept environment is never even classified - and listed with its reason
+  # every run, so a keep nobody remembers making is still in front of someone.
+  if cut -f1 "${workdir}/env-keys.txt" | grep -qxF "${env}/KEEP"; then
+    keep_body="$(aws s3 cp "s3://${bucket}/${env}/KEEP" - 2>/dev/null || true)"
+    keep_reason="$(sed -n 's/^reason: //p' <<< "${keep_body}")"
+    keep_by="$(sed -n 's/^kept-by: //p' <<< "${keep_body}")"
+    keep_at="$(sed -n 's/^kept-at: //p' <<< "${keep_body}")"
+    keep_age=""
+    if [[ -n "${keep_at}" ]] && keep_epoch="$(date -u -d "${keep_at}" +%s 2>/dev/null)"; then
+      keep_age="$(( (now_epoch - keep_epoch) / 86400 ))d"
+    fi
+    kept_envs+=("${env} - kept ${keep_age:-?} by ${keep_by:-unknown}: ${keep_reason:-(no reason recorded)}")
     continue
   fi
 
@@ -315,6 +338,8 @@ echo "  Reported, never deleted - see the comment above this section for why."
 listing "${orphan_resources[@]+"${orphan_resources[@]}"}"
 
 section "Skipped"
+echo "  Kept on purpose (keep-env.sh) - still worth a glance, since a forgotten keep costs money:"
+listing "${kept_envs[@]+"${kept_envs[@]}"}"
 echo "  In use (Terraform holds the lock):"
 listing "${locked_envs[@]+"${locked_envs[@]}"}"
 echo "  Written too recently to be sure (younger than ${max_age_hours}h):"
@@ -323,7 +348,7 @@ echo "  Log groups not recognisable as this project's - reported, never deleted:
 listing "${orphan_unknown[@]+"${orphan_unknown[@]}"}"
 
 echo ""
-echo "Summary: ${#live_envs[@]} stranded, ${#empty_envs[@]} leftover state objects, ${#orphan_ephemeral[@]} ephemeral log groups, ${#orphan_named[@]} retired-function log groups, ${#orphan_appsync[@]} AppSync log groups, ${#orphan_resources[@]} stateless resources (reported only)."
+echo "Summary: ${#live_envs[@]} stranded, ${#empty_envs[@]} leftover state objects, ${#orphan_ephemeral[@]} ephemeral log groups, ${#orphan_named[@]} retired-function log groups, ${#orphan_appsync[@]} AppSync log groups, ${#orphan_resources[@]} stateless resources (reported only), ${#kept_envs[@]} kept."
 
 # ---------------------------------------------------------------------------
 # Always: orphaned AppSync log groups

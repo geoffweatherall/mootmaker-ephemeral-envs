@@ -139,6 +139,12 @@ removal_failed=""
 for component in "${discovered[@]}"; do
   aws s3 rm "s3://${state_bucket}/${name}/${component}/terraform.tfstate" >&2 || removal_failed="true"
 done
+# The KEEP marker (keep-env.sh) goes too: tearing an environment down is the end of keeping it, and
+# a marker left behind would fail the empty-prefix check below on every kept environment.
+if aws s3api head-object --bucket "${state_bucket}" --key "${name}/KEEP" >/dev/null 2>&1; then
+  echo "Removing '${name}' KEEP marker ($(aws s3 cp "s3://${state_bucket}/${name}/KEEP" - 2>/dev/null | sed -n 's/^reason: //p'))..." >&2
+  aws s3 rm "s3://${state_bucket}/${name}/KEEP" >&2 || removal_failed="true"
+fi
 if [[ -n "${removal_failed}" ]]; then
   echo "Warning: failed to remove one or more state files for '${name}' from s3://${state_bucket} - it may still show up in cleanup-stale-envs.sh's discovery. The environment itself was torn down successfully regardless." >&2
 fi
