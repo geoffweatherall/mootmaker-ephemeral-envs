@@ -18,11 +18,11 @@ that same split, to match its now-single purpose.
 - **The name check is a safety rail, not a nicety.** `teardown-ephemeral-env.sh` refuses anything
   that is not `<kind>-<YYMMDD>-<rand4>`, so a typo can never reach `production`. Do not work around
   it; retiring a long-lived environment is a deliberate manual act.
-- **Known gap: teardown is incomplete.** The script undeploys `mootmaker-webapp` and `mootmaker-api`
-  only, and removes only those two state objects. Its caution is correct — deleting a state object it
-  did not itself destroy would orphan live infrastructure — but the effect is that an environment
-  with tools deployed is *not* fully torn down by the script named "tear down this environment".
-  Undeploy the tools separately first.
+- **Teardown discovers, and refuses what it does not know.** `teardown-ephemeral-env.sh` lists the
+  environment's state prefix and undeploys every component it finds (since 2026-09-02; before that
+  it knew only `mootmaker-webapp` and `mootmaker-api`). A component missing from its
+  `component_dirs` stops it, loudly — add the component there rather than deleting its state by
+  hand, which would orphan live infrastructure.
 - **Ephemeral environments leak.** Four survived a single session in August 2026 and were found the
   next morning still running. Anything older than 24 hours is a leak. The daily sweep
   (`sweep.yml`) tears down any ephemeral environment idle for 48 hours, unless it carries a KEEP
