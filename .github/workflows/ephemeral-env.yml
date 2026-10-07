@@ -1,0 +1,187 @@
+# Create or tear down one ephemeral environment on request. This is how a cloud Claude session gets
+# an environment: it has no AWS credentials and no Terraform (and should get neither), but it can
+# dispatch this workflow and read the result. A person can dispatch it from the Actions tab too.
+#
+# Runs the same create-ephemeral-env.sh / teardown-ephemeral-env.sh a person runs at a workstation,
+# unchanged, from the same sibling layout sweep.yml builds. The AWS role is the ephemeral one, not
+# the release one: it is denied everything belonging to test and production (see
+# mootmaker-bootstrap-aws-accounts, workload-account/github-actions-deploy-role.yaml), which
+# matters here because api_ref and webapp_ref deploy whatever code that branch holds.
+#
+# Reading the result: the environment name, its URLs and the commits deployed are in the job
+# summary, and repeated as a notice annotation, which is readable from the check run when the log
+# is not. Pass request_id to find your own run among others; it goes into the run name.
+#
+# A forgotten environment is still swept after 48 idle hours by sweep.yml, unless created with
+# keep_reason.
+name: Ephemeral environment
+
+run-name: "${{ inputs.action }} ${{ inputs.action == 'teardown' && inputs.name || inputs.kind }} ${{ inputs.request_id }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'create or teardown'
+        type: choice
+        options: [create, teardown]
+        default: create
+      kind:
+        description: 'create: names the environment <kind>-<YYMMDD>-<rand4>; "claude" for a cloud session'
+        type: string
+        default: claude
+      api_ref:
+        description: 'create: mootmaker-api branch, tag or SHA to deploy'
+        type: string
+        default: main
+      webapp_ref:
+        description: 'create: mootmaker-webapp branch, tag or SHA to deploy'
+        type: string
+        default: main
+      with_demo_data:
+        description: 'create: also deploy and seed mootmaker-demo-data'
+        type: boolean
+        default: false
+      keep_reason:
+        description: 'create: leave it up past the 48-hour sweep, for this reason (blank = sweepable)'
+        type: string
+        default: ''
+      name:
+        description: 'teardown: the environment to tear down, e.g. claude-261007-x7q2'
+        type: string
+        default: ''
+      request_id:
+        description: 'Optional label copied into the run name, so the caller can find this run'
+        type: string
+        default: ''
+
+# One run per environment for teardown. Creates are independent: each generates its own name.
+concurrency:
+  group: ephemeral-env-${{ inputs.action == 'teardown' && inputs.name || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  ephemeral-env:
+    runs-on: ubuntu-24.04
+    # A full create builds the API jar and the webapp, then two Terraform applies with CloudFront
+    # distributions in them.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: siblings/mootmaker-ephemeral-envs
+
+      # The scripts find each component as a SIBLING directory, as on a workstation.
+      - uses: actions/checkout@v5
+        with:
+          repository: geoffweatherall/mootmaker-api
+          ref: ${{ inputs.action == 'create' && inputs.api_ref || 'main' }}
+          path: siblings/mootmaker-api
+      - uses: actions/checkout@v5
+        with:
+          repository: geoffweatherall/mootmaker-webapp
+          ref: ${{ inputs.action == 'create' && inputs.webapp_ref || 'main' }}
+          path: siblings/mootmaker-webapp
+      # Checked out for teardown even when create did not deploy it: teardown discovers components
+      # from state and stops on one it has no checkout for.
+      - uses: actions/checkout@v5
+        with:
+          repository: geoffweatherall/mootmaker-demo-data
+          path: siblings/mootmaker-demo-data
+
+      - uses: actions/setup-java@v5
+        if: inputs.action == 'create'
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: siblings/mootmaker-api/impl/pom.xml
+
+      - uses: actions/setup-node@v5
+        if: inputs.action == 'create'
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: siblings/mootmaker-webapp/webapp/package-lock.json
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::431071856068:role/mootmaker-ephemeral-github-actions-deploy
+          aws-region: us-east-1
+
+      - name: Create
+        id: create
+        if: inputs.action == 'create'
+        working-directory: siblings/mootmaker-ephemeral-envs
+        env:
+          KIND: ${{ inputs.kind }}
+          WITH_DEMO_DATA: ${{ inputs.with_demo_data }}
+          KEEP_REASON: ${{ inputs.keep_reason }}
+        run: |
+          set -o pipefail
+          args=("${KIND}")
+          if [[ "${WITH_DEMO_DATA}" == "true" ]]; then args+=(--with-demo-data); fi
+          if [[ -n "${KEEP_REASON}" ]]; then args+=(--keep "${KEEP_REASON}"); fi
+          # stderr goes to a file as well as the log so a failed create can still be named and torn
+          # down below; stdout's last line is the name on success.
+          ./create-ephemeral-env.sh "${args[@]}" 2> >(tee create-stderr.log >&2) > create-stdout.log
+          name="$(tail -n1 create-stdout.log)"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        if: inputs.action == 'create' && success()
+        env:
+          NAME: ${{ steps.create.outputs.name }}
+          KEEP_REASON: ${{ inputs.keep_reason }}
+        run: |
+          api_sha="$(git -C siblings/mootmaker-api rev-parse HEAD)"
+          webapp_sha="$(git -C siblings/mootmaker-webapp rev-parse HEAD)"
+          {
+            echo "## Ephemeral environment \`${NAME}\` is up"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Environment | \`${NAME}\` |"
+            echo "| Webapp | https://www.${NAME}.mootmaker.com |"
+            echo "| GraphQL | https://api.${NAME}.mootmaker.com/graphql |"
+            echo "| mootmaker-api | \`${api_sha}\` |"
+            echo "| mootmaker-webapp | \`${webapp_sha}\` |"
+            echo "| Kept | ${KEEP_REASON:-no - swept after 48 idle hours} |"
+            echo
+            echo "Tear down: dispatch this workflow with action \`teardown\` and name \`${NAME}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Ephemeral environment created::${NAME} api=${api_sha} webapp=${webapp_sha}"
+
+      # A create that dies partway leaves a half-built environment. Tear it down now rather than
+      # leaving it for the sweep two days later. The name is the first thing create prints.
+      - name: Tear down a failed create
+        if: inputs.action == 'create' && failure()
+        working-directory: siblings/mootmaker-ephemeral-envs
+        run: |
+          name="$(sed -nE "s/^Creating ephemeral environment '([^']+)'.*/\1/p" create-stderr.log | head -n1)"
+          if [[ -z "${name}" ]]; then
+            echo "::warning title=Nothing to tear down::create failed before choosing a name"
+            exit 0
+          fi
+          echo "::error title=Ephemeral environment create failed::${name} - tearing it down"
+          ./teardown-ephemeral-env.sh "${name}" --yes
+
+      - name: Tear down
+        if: inputs.action == 'teardown'
+        working-directory: siblings/mootmaker-ephemeral-envs
+        env:
+          NAME: ${{ inputs.name }}
+        run: |
+          # teardown-ephemeral-env.sh refuses anything not shaped <kind>-<YYMMDD>-<rand4>, so
+          # "test" or "production" never get this far; the role denies them as well.
+          ./teardown-ephemeral-env.sh "${NAME}" --yes
+          echo "## Ephemeral environment \`${NAME}\` torn down" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Ephemeral environment torn down::${NAME}"

@@ -51,6 +51,18 @@ only owns the things that are genuinely cross-repo:
   nobody remembers is still visible. `teardown-ephemeral-env.sh` removes the marker along with the
   environment's state.
 
+- **On-demand environments from GitHub Actions**:
+  [`.github/workflows/ephemeral-env.yml`](.github/workflows/ephemeral-env.yml), dispatched by hand,
+  runs `create-ephemeral-env.sh` or `teardown-ephemeral-env.sh` with chosen `mootmaker-api` and
+  `mootmaker-webapp` refs. It exists so that cloud Claude sessions, which have no AWS credentials
+  and no Terraform, can get an environment by dispatching it and reading the environment name and
+  URLs from the job summary (also posted as a notice annotation). It runs as
+  `mootmaker-ephemeral-github-actions-deploy`, a role denied everything belonging to `test` and
+  `production`, rather than the release role
+  ([mootmaker-bootstrap-aws-accounts](https://github.com/geoffweatherall/mootmaker-bootstrap-aws-accounts),
+  `workload-account/github-actions-deploy-role.yaml`; mootmaker/designs/android-app.md Q7). A
+  create that fails partway is torn down by the same run, and anything left over is still swept.
+
 The real-email SES→SNS→SQS pipeline this repo used to also own moved to its own repo,
 [mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing), 2026-09-03 —
 see [History](#history) below. It was never really related to the scripts above; the two were only
