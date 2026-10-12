@@ -1,67 +1,55 @@
 # mootmaker-ephemeral-envs
 
-Ephemeral-environment lifecycle scripts shared by every frontend: stand up/tear down a matched
-`mootmaker-api` + `mootmaker-webapp` pair under one environment name.
+Scripts and workflows that create, keep, tear down and sweep ephemeral environments: throwaway copies of
+the system named `<kind>-<YYMMDD>-<rand4>`.
 
-**Start by reading [README.md](README.md)** and [testing-strategy.md](testing-strategy.md).
-
-Formerly `mootmaker-e2e`, before each frontend gained its own `e2e/` and `acceptance/` suites. Also
-used to own a persistent real-email testing pipeline, split out to
-[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing) 2026-09-03 —
-this repo is itself being renamed to
-[mootmaker-ephemeral-envs](https://github.com/geoffweatherall/mootmaker-ephemeral-envs) as part of
-that same split, to match its now-single purpose.
+**Read [README.md](README.md) first**, and [testing-strategy.md](testing-strategy.md) before changing a
+script. Keep both true in the same pull request as any change that affects them.
 
 ## Working here
 
-- **These scripts create and destroy real AWS resources.** Treat them with the care that implies.
-- **The name check is a safety rail, not a nicety.** `teardown-ephemeral-env.sh` refuses anything
-  that is not `<kind>-<YYMMDD>-<rand4>`, so a typo can never reach `production`. Do not work around
-  it; retiring a long-lived environment is a deliberate manual act.
-- **Teardown discovers, and refuses what it does not know.** `teardown-ephemeral-env.sh` lists the
-  environment's state prefix and undeploys every component it finds (since 2026-09-02; before that
-  it knew only `mootmaker-webapp` and `mootmaker-api`). A component missing from its
-  `component_dirs` stops it, loudly — add the component there rather than deleting its state by
-  hand, which would orphan live infrastructure.
-- **Ephemeral environments leak.** Four survived a single session in August 2026 and were found the
-  next morning still running. Anything older than 24 hours is a leak. The daily sweep
-  (`sweep.yml`) tears down any ephemeral environment idle for 48 hours, unless it carries a KEEP
-  marker — so an environment you mean to leave up gets `./keep-env.sh <name> "<reason>"` (or
-  `create-ephemeral-env.sh --keep "<reason>"`), and one you forget to tear down is not your only
-  line of defence.
-- **Verify teardown against live AWS**, not the script's exit code.
+- **These scripts create and destroy real AWS resources.** Treat them with the care that implies, and
+  state the cost before creating anything.
+- **Use `create-ephemeral-env.sh` to make an environment**, never a hand-rolled name. Reuse one environment
+  for a whole session, and tear it down when the work is finished, or keep it with
+  `./keep-env.sh <name> "<reason>"` if it must outlast the 48-hour sweep.
+- **The name check is a safety rail.** Teardown refuses anything that is not `<kind>-<YYMMDD>-<rand4>`, so
+  a typo can never reach `test` or `production`. Never work around it.
+- **Teardown discovers components and refuses ones it does not know.** A component missing from
+  `component_dirs` in `teardown-ephemeral-env.sh` stops it. Add the component there; never delete its
+  state by hand, which would orphan live infrastructure.
+- **The sweep destroys unattended.** Any change to `sweep-stale-envs.sh` keeps all four guards (name shape,
+  no lock, 48 hours idle, no KEEP marker), and is tried without `--destroy` first.
+- **Verify teardown against AWS**, not the script's exit code.
 
 ---
 
 ## Project-wide rules
 
-This repository is part of the **mootmaker** project. The workflow rules that apply everywhere live
-in the hub repository, which you should find checked out as a sibling directory:
+This repository is part of **Mootmaker**. The hub repository, checked out as a sibling at
+`../mootmaker`, holds what applies everywhere:
 
-    ../mootmaker/docs/process/README.md
+- How work is done: [`../mootmaker/docs/process/README.md`](https://github.com/geoffweatherall/mootmaker/blob/main/docs/process/README.md).
+  Read it before any non-trivial work.
+- How the system fits together: [`../mootmaker/docs/overview/`](https://github.com/geoffweatherall/mootmaker/tree/main/docs/overview).
+- What to do when something is wrong: [`../mootmaker/docs/runbooks/`](https://github.com/geoffweatherall/mootmaker/blob/main/docs/runbooks/README.md).
 
-On GitHub: <https://github.com/geoffweatherall/mootmaker/blob/main/docs/process/README.md>
+The short version:
 
-**Read it before doing any non-trivial work here.** The short version:
+- Work of any real size starts with a **design** (`../mootmaker/designs/`); a bug or small change starts
+  with a **GitHub issue in this repository**, so `Closes #N` works.
+- Everything lands on a **branch** through a **pull request**. Reading the diff is the review; merging is
+  the approval.
+- **A green acceptance run against a real deployed environment** is the definition of working.
+- **`test` and `production` change only through a release** (`release.yml` in mootmaker-release). Use an
+  ephemeral environment for your own work, and tear it down when you finish.
+- **Say what something costs in AWS before creating it.** Under NZ$1 one-off, go ahead and state it;
+  more, or anything recurring, ask first.
+- **Keep documentation and comments true and current.** If a change makes a document wrong, fixing it is
+  part of the change. Describe what is, not how it got here; a comment says what and why.
+- **Verify against reality, not your own output**, and **say what actually happened**, including
+  failures and skipped steps.
 
-- Work of any real size starts with a **design document** (`../mootmaker/designs/`), not with code.
-- Bugs and small changes start with a **GitHub issue in this repository**, so `Closes #N` works.
-- All work happens on a **branch** and lands via a **pull request**. There is no approval step —
-  reading the diff is the review, merging is the approval.
-- **A green acceptance run against a real deployed environment** is the definition of working — not
-  a passing unit suite, and not a successful deploy.
-- **Environments are `production`, `test`, or ephemeral.** `test` and `production` change only
-  through `release.yml` in mootmaker-release — never `./deploy.sh` by hand. Everything else is
-  ephemeral: tear down any you create, as part of finishing rather than as a tidy-up afterwards.
-- **If your change makes a document wrong, fixing it is part of the change.**
-- **Verify against reality, not your own output.** A script exiting zero is not evidence that the
-  thing it was meant to do happened.
-- **Say what actually happened.** Failing tests get reported with their output; skipped steps get
-  named.
-
-Also useful: [`../mootmaker/docs/roles/`](https://github.com/geoffweatherall/mootmaker/blob/main/docs/roles/)
-for which kind of work you are doing, and
-[`../mootmaker/tools/workstation/check.sh`](https://github.com/geoffweatherall/mootmaker/blob/main/tools/workstation/check.sh)
-if something is not installed.
+Something not installed? [`../mootmaker/tools/workstation/check.sh`](https://github.com/geoffweatherall/mootmaker/blob/main/tools/workstation/check.sh).
 
 `CLAUDE.md` in this repository is a symlink to this file.

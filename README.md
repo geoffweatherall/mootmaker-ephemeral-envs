@@ -1,117 +1,106 @@
 # mootmaker-ephemeral-envs
 
-A project that is part of my [Claude Code exploration](https://github.com/geoffweatherall/mootmaker).
+Scripts and workflows that create, keep, tear down and sweep up **ephemeral environments**: complete,
+throwaway copies of the system for development and testing, named `<kind>-<YYMMDD>-<rand4>` (for example
+`claude-261012-x7q2`). They deploy several components together, so they live in their own repository rather
+than inside any one of them.
 
-## Purpose
+How ephemeral environments fit with `test` and `production`, and who creates which kind, is in the hub's
+[delivery overview](https://github.com/geoffweatherall/mootmaker/blob/main/docs/overview/delivery.md).
 
-Shared testing infrastructure used by more than one frontend of the
-[mootmaker](https://github.com/geoffweatherall/mootmaker) project — currently
-[mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp), with
-[mootmaker-android](https://github.com/geoffweatherall/mootmaker-android) expected to depend on
-the same pieces later. Nothing here is a test suite itself; each frontend owns its own `e2e/` and
-`acceptance/` tests (see [mootmaker-webapp/testing-strategy.md](https://github.com/geoffweatherall/mootmaker-webapp/blob/main/testing-strategy.md)),
-against its own real deployed environment, using whatever's idiomatic for that platform. This repo
-only owns the things that are genuinely cross-repo:
+```mermaid
+flowchart LR
+  create["create-ephemeral-env.sh<br/>or ephemeral-env.yml"]
+  env(["claude-261012-x7q2<br/>api + webapp<br/>(+ demo-data)"])
+  keep["keep-env.sh<br/>writes a KEEP marker"]
+  teardown["teardown-ephemeral-env.sh"]
+  sweep["sweep.yml, daily 06:00 UTC<br/>sweep-stale-envs.sh --destroy"]
+  create --> env
+  keep -. "protects" .-> env
+  env -- "when finished" --> teardown
+  env -- "idle 48 h, no KEEP" --> sweep
+```
 
-- **Ephemeral-environment lifecycle scripts** (`create-ephemeral-env.sh`,
-  `teardown-ephemeral-env.sh`, `cleanup-stale-envs.sh`, `sweep-stale-envs.sh`,
-  `list-ephemeral-envs.sh`, `keep-env.sh` / `unkeep-env.sh`) — these
-  deploy/undeploy [mootmaker-api](https://github.com/geoffweatherall/mootmaker-api) and
-  [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp) *together*, so they
-  can't live inside either one on their own.
+## The scripts
 
-  Two of those look similar and are not interchangeable. `cleanup-stale-envs.sh` is for a person at
-  a keyboard: it lists what it finds and asks about each one. `sweep-stale-envs.sh` is the
-  unattended counterpart run daily by
-  [`.github/workflows/sweep.yml`](.github/workflows/sweep.yml). Run by hand it **reports and
-  changes nothing** unless given `--destroy`; the schedule passes `--destroy`, and has since it
-  graduated from its report-only trial on 2026-10-05
-  ([mootmaker#51](https://github.com/geoffweatherall/mootmaker/issues/51)). It tears down an
-  ephemeral environment only once nothing under its state prefix has been written for **48 hours**,
-  and never one carrying a **KEEP marker**. One exception runs even in report-only mode: AppSync log
-  groups whose API no longer exists are always deleted
-  ([mootmaker#71](https://github.com/geoffweatherall/mootmaker/issues/71)). It also
-  finds things the interactive script does not: state objects left behind by an environment that
-  was already destroyed, Lambda and AppSync log groups whose function or API no longer exists, and
-  resources named for an environment that has no state at all. See
-  [mootmaker/designs/archive/ci-cd-pipeline.md](https://github.com/geoffweatherall/mootmaker/blob/main/designs/archive/ci-cd-pipeline.md)
-  rollout step 11.
+All of them expect the component repositories as sibling checkouts (`../mootmaker-api`,
+`../mootmaker-webapp`, `../mootmaker-demo-data`) and AWS credentials for the workload account.
 
-  **Keeping an environment on purpose.** The sweep's age guard measures state *writes*, not use, so
-  an environment someone is testing in by hand looks idle. During the trial it flagged a
-  deliberately kept environment and a person's own as stranded. To leave one up:
+| Script | What it does |
+|---|---|
+| `create-ephemeral-env.sh [kind] [--with-demo-data] [--keep "<reason>"]` | Generates a name, then runs mootmaker-api's and mootmaker-webapp's own `deploy.sh` into it. `--with-demo-data` also deploys demo-data and seeds the environment once; without it the environment starts empty. Prints the name as the last line of stdout. On failure it prints the name and the teardown command |
+| `teardown-ephemeral-env.sh <name> [--yes]` | Finds what is deployed by listing the environment's Terraform state prefix, undeploys each component, and deletes the state objects and any KEEP marker. Prompts per component unless `--yes` |
+| `keep-env.sh <name> "<reason>"`, `unkeep-env.sh <name>` | Writes or removes `s3://remote-state-<account>/<name>/KEEP`, which holds the reason, who kept it and when. The sweep skips a kept environment |
+| `list-ephemeral-envs.sh` | Read-only report: every environment's state objects, how many resources each tracks, and for live ones whether those resources still exist in AWS |
+| `cleanup-stale-envs.sh` | For a person at a keyboard: lists every ephemeral environment and asks about each one before tearing it down |
+| `sweep-stale-envs.sh [--destroy] [--max-age-hours N]` | The unattended sweep. Reports only, unless given `--destroy` |
 
-  ```bash
-  ./keep-env.sh <name> "left up for Geoff to inspect the new layout"   # or: create-ephemeral-env.sh --keep "<reason>"
-  ./unkeep-env.sh <name>                                               # the sweep applies again
-  ```
+**Names.** `kind` says what created the environment: lowercase letters, digits and hyphens, starting with a
+letter, at most 8 characters. The whole name must fit in 22 characters, because AWS resource names are
+built from it. Kinds in use:
 
-  The marker is `s3://remote-state-<account>/<name>/KEEP`, holding the reason, who kept it and
-  when. The sweep lists every kept environment with that reason and its age on every run, so a keep
-  nobody remembers is still visible. `teardown-ephemeral-env.sh` removes the marker along with the
-  environment's state.
+| Kind | Created by |
+|---|---|
+| `claude` (the default) | An AI session's own environment, reused for the whole session |
+| a person's name | A person's own environment |
+| `web-acc` | mootmaker-webapp's `acceptance/run.sh` |
+| `and-acc` | mootmaker-android's `run-acceptance` pull request workflow |
+| `rel-api`, `rel-web`, `rel-demo`, `rel-and` | Each component's acceptance run inside a release |
 
-- **On-demand environments from GitHub Actions**:
-  [`.github/workflows/ephemeral-env.yml`](.github/workflows/ephemeral-env.yml), dispatched by hand,
-  runs `create-ephemeral-env.sh` or `teardown-ephemeral-env.sh` with chosen `mootmaker-api` and
-  `mootmaker-webapp` refs. It exists so that cloud Claude sessions, which have no AWS credentials
-  and no Terraform, can get an environment by dispatching it and reading the environment name and
-  URLs from the job summary (also posted as a notice annotation). It runs as
-  `mootmaker-ephemeral-github-actions-deploy`, a role denied everything belonging to `test` and
-  `production`, rather than the release role
-  ([mootmaker-bootstrap-aws-accounts](https://github.com/geoffweatherall/mootmaker-bootstrap-aws-accounts),
-  `workload-account/github-actions-deploy-role.yaml`; mootmaker/designs/archive/android-app.md Q7). A
-  create that fails partway is torn down by the same run, and anything left over is still swept.
+**Safety rails.** Teardown refuses any name that does not match `<kind>-<YYMMDD>-<rand4>`, so a typo can
+never reach `test` or `production`. Each component's `undeploy.sh` also refuses those two under `--yes`.
 
-The real-email SES→SNS→SQS pipeline this repo used to also own moved to its own repo,
-[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing), 2026-09-03 —
-see [History](#history) below. It was never really related to the scripts above; the two were only
-ever combined because both were the "genuinely cross-repo" leftovers of the original
-`mootmaker-e2e` split.
+## The sweep
 
-See [mootmaker/testing-strategy.md](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/testing-strategy.md)
-for how this fits the wider cross-repo strategy, and
-[testing-strategy.md](testing-strategy.md) for the detail specific to this repo.
+`sweep.yml` runs `sweep-stale-envs.sh --destroy` daily at 06:00 UTC. A manual dispatch defaults to
+destroying too, and can be unticked for a report-only run. Each report is kept as an artifact for 90 days.
+It sweeps four things, reported separately:
 
-## History
+1. **Environments with live infrastructure**, stranded by an interrupted run.
+2. **Environments whose state is already empty.** `terraform destroy` empties a state file but leaves the
+   object, and release builds call `undeploy.sh` directly.
+3. **Lambda log groups whose function no longer exists.** Destroying a function leaves the group Lambda
+   created.
+4. **AppSync log groups whose API no longer exists.** AppSync re-creates these during teardown. They are
+   deleted even in report-only mode.
 
-This repo used to be `mootmaker-e2e` and also owned a full-stack Playwright suite
-(`sign-up.spec.ts`, `forgot-password.spec.ts`, `smoke.spec.ts`) plus `use-cases.md`. Both moved out
-2026-08-19, once a second frontend (Android) meant "e2e tests" needed to become "each frontend's
-own e2e/acceptance tests" rather than one shared suite:
+Resources named for an environment with no state at all are reported, never deleted.
 
-- The Playwright suite and its support helpers (`cognitoAdmin.ts`, `email.ts`, `testAccount.ts`)
-  moved into [mootmaker-webapp](https://github.com/geoffweatherall/mootmaker-webapp)'s new `e2e/`
-  directory, unchanged in behaviour.
-- `use-cases.md` moved into
-  [mootmaker](https://github.com/geoffweatherall/mootmaker/blob/main/docs/reference/use-cases.md) — a
-  client-agnostic list of scenarios, not owned by any one frontend.
-- This repo was renamed (on GitHub too, since — this note used to say that rename was still
-  deferred; it has since happened) and kept only the genuinely cross-repo pieces described above.
+The same daily run also runs mootmaker-bootstrap-aws-accounts' `check-accumulation.sh`, which looks for
+anything growing with time rather than use, such as log groups without retention. A finding turns the
+run red, which is the notification.
 
-**2026-09-03**: those "genuinely cross-repo pieces" turned out to still be two unrelated things
-combined by circumstance rather than by relationship — the ephemeral-environment scripts above, and
-the real-email SES→SNS→SQS pipeline. The pipeline moved to its own repo,
-[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing); this repo
-kept only the ephemeral-environment scripts and is being renamed again, to
-[mootmaker-ephemeral-envs](https://github.com/geoffweatherall/mootmaker-ephemeral-envs), to match.
+An environment is swept only when all of these hold:
 
-## Status
+- its name matches `<kind>-<YYMMDD>-<rand4>`;
+- no `.tflock` object exists under its state prefix, so no Terraform run holds it;
+- every object under its state prefix is more than **48 hours** old;
+- it has no KEEP marker.
 
-The ephemeral-environment lifecycle scripts were built and verified working against real AWS
-2026-08-15 (back when this repo was still `mootmaker-e2e`) — see [testing-strategy.md](testing-strategy.md)
-for detail. The real-email SES→SNS→SQS pipeline that was also verified that day now lives in
-[mootmaker-email-testing](https://github.com/geoffweatherall/mootmaker-email-testing) — see that
-repo's own README for its status, unchanged by the move.
+The age guard measures state *writes*, not use. An environment someone is testing in by hand looks idle,
+so keep it if it must outlast two days. Kept environments are listed on every run with their reason and
+age, so a forgotten keep stays visible.
 
-Also 2026-08-19: environment names now identify exactly what created them (e.g. `web-e2e-*`/
-`web-acc-*` for `mootmaker-webapp`'s own suites, not a single generic `e2e-*` for everything —
-see [testing-strategy.md#naming-convention](testing-strategy.md#naming-convention));
-`teardown-ephemeral-env.sh` now removes its own environment's state files from the shared bucket
-once torn down; and `list-ephemeral-envs.sh` was added as a read-only report on every ephemeral
-environment's state files, flagging which are empty (nothing left to destroy, safe to delete
-directly) and, for any that aren't, cross-checking against real AWS (`terraform plan -refresh-only`)
-to tell "still genuinely deployed" apart from "resources are actually gone but state doesn't know
-it yet." All verified against real AWS the same day, including a deliberate live test (deploy a
-real environment, manually delete one resource outside Terraform, confirm the script correctly
-named exactly that one as missing) — see testing-strategy.md for detail.
+## From GitHub Actions
+
+`ephemeral-env.yml`, dispatched by hand, runs the same create or teardown scripts on a runner. This is how
+a cloud AI session, which has no AWS credentials or Terraform, gets an environment. It can choose the
+mootmaker-api and mootmaker-webapp branches to deploy, demo data, and a keep reason. The environment
+name, URLs and deployed commits appear in the job summary and as a notice annotation. Pass `request_id` to
+find your own run.
+
+Both workflows run as `mootmaker-ephemeral-github-actions-deploy`, an AWS role denied everything belonging
+to `test` and `production` (defined in mootmaker-bootstrap-aws-accounts,
+`workload-account/github-actions-deploy-role.yaml`). That matters because the workflow deploys whatever
+code the chosen branches hold. A create that fails partway is torn down by the same run.
+
+## Cost
+
+An idle ephemeral environment costs almost nothing, because every component scales to zero. Deploying
+and testing in it is what costs: a few US cents per acceptance run. See the hub's
+[cost overview](https://github.com/geoffweatherall/mootmaker/blob/main/docs/overview/cost-and-scale-to-zero.md).
+Problems with an environment, or with the sweep, are covered by the hub's
+[ephemeral environment runbook](https://github.com/geoffweatherall/mootmaker/blob/main/docs/runbooks/ephemeral-environment-problems.md)
+and [sweep runbook](https://github.com/geoffweatherall/mootmaker/blob/main/docs/runbooks/sweep-failed.md).
+
+How changes here are tested: [testing-strategy.md](testing-strategy.md).

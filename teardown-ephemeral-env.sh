@@ -2,11 +2,9 @@
 # Tears down one specific, already-known ephemeral environment.
 #
 # DISCOVERS what is deployed by listing the environment's own Terraform state prefix in S3, rather
-# than iterating a hardcoded list of components. That is the fix for a real bug: the previous
-# version knew only about mootmaker-webapp and mootmaker-api, so tearing down an environment that
-# also had demo tooling deployed removed two components, left the others' state orphaned in S3, and
-# reported success throughout. A component nobody remembered is now still torn down - and one this
-# script does not recognise stops it, loudly, instead of being silently skipped.
+# than iterating a hardcoded list of components, so a component nobody remembered is still torn
+# down - and one this script does not recognise stops it, loudly, instead of being silently skipped
+# with its infrastructure left running.
 #
 # Refuses to run against anything that doesn't look like a recognized <kind>-<YYMMDD>-<rand4>
 # ephemeral environment name - a hard safety rail (a typo must never be able to reach
@@ -15,8 +13,7 @@
 #
 # --yes passes through to each undeploy.sh, replacing those prompts with -auto-approve, for
 # automation that has no stdin to answer them: the release pipeline's ephemeral acceptance
-# environments and the scheduled ephemeral sweep (mootmaker/designs/archive/ci-cd-pipeline.md Rollout
-# steps 6 and 11). The name check above still applies and still runs first, so --yes can only ever
+# environments and the scheduled ephemeral sweep. The name check above still applies and still runs first, so --yes can only ever
 # accelerate a teardown this script was already willing to perform - and each undeploy.sh refuses
 # "production"/"test" under --yes independently of that.
 #
@@ -25,8 +22,7 @@ set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
 # component (e.g. `./mootmaker-ephemeral-envs/teardown-ephemeral-env.sh` from a parent dir), colliding
-# with the BASH_SOURCE-based cd further below - see mootmaker-webapp/e2e/run.sh's fuller comment
-# on the same bug, found and fixed there 2026-08-22.
+# with the BASH_SOURCE-based cd further below.
 
 assume_yes=0
 args=()
@@ -46,15 +42,14 @@ if [[ -z "${name}" ]]; then
 fi
 
 # Must look exactly like <kind>-<YYMMDD>-<rand4>, where kind is 1-8 lowercase
-# letters/digits/hyphens starting with a letter (e.g. "claude", "web-e2e",
-# "web-acc" - see create-ephemeral-env.sh's own usage comment for the
-# convention, and mootmaker/docs/reference/testing-strategy.md#environments for the
-# day-only-timestamp reasoning). Deliberately strict on shape, not on which
+# letters/digits/hyphens starting with a letter (e.g. "claude", "web-acc" -
+# see create-ephemeral-env.sh for the convention and the day-only
+# timestamp). Deliberately strict on shape, not on which
 # specific kind values exist: this script's whole job is to be safe to point
 # at an arbitrary string without risking "production", not to be
 # the source of truth for which kinds are in use.
 if [[ ! "${name}" =~ ^[a-z][a-z0-9-]{0,7}-[0-9]{6}-[a-z0-9]{4}$ ]]; then
-  echo "'${name}' doesn't look like a <kind>-<YYMMDD>-<rand4> ephemeral environment name (expected e.g. claude-260815-x7q2 or web-e2e-260815-x7q2)." >&2
+  echo "'${name}' doesn't look like a <kind>-<YYMMDD>-<rand4> ephemeral environment name (expected e.g. claude-260815-x7q2 or web-acc-260815-x7q2)." >&2
   echo "Refusing to undeploy - this script only ever touches ephemeral environments, never 'test' or 'production'." >&2
   exit 1
 fi
@@ -99,7 +94,7 @@ echo "Found: ${discovered[*]}" >&2
 
 # Refuse rather than guess. An unrecognised component means real infrastructure this script cannot
 # destroy; carrying on would delete the state objects it does know about and report success while
-# leaving that component running with nothing tracking it - the exact failure being fixed here.
+# leaving that component running with nothing tracking it.
 unknown=()
 for component in "${discovered[@]}"; do
   if [[ -z "${component_dirs[${component}]:-}" ]]; then
