@@ -60,7 +60,7 @@ only owns the things that are genuinely cross-repo:
   `mootmaker-ephemeral-github-actions-deploy`, a role denied everything belonging to `test` and
   `production`, rather than the release role
   ([mootmaker-bootstrap-aws-accounts](https://github.com/geoffweatherall/mootmaker-bootstrap-aws-accounts),
-  `workload-account/github-actions-deploy-role.yaml`; mootmaker/designs/android-app.md Q7). A
+  `workload-account/github-actions-deploy-role.yaml`; mootmaker/designs/archive/android-app.md Q7). A
   create that fails partway is torn down by the same run, and anything left over is still swept.
 
 The real-email SES→SNS→SQS pipeline this repo used to also own moved to its own repo,
