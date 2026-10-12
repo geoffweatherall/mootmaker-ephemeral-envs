@@ -89,10 +89,11 @@ mootmaker-api and mootmaker-webapp branches to deploy, demo data, and a keep rea
 name, URLs and deployed commits appear in the job summary and as a notice annotation. Pass `request_id` to
 find your own run.
 
-Both workflows run as `mootmaker-ephemeral-github-actions-deploy`, an AWS role denied everything belonging
-to `test` and `production` (defined in mootmaker-bootstrap-aws-accounts,
-`workload-account/github-actions-deploy-role.yaml`). That matters because the workflow deploys whatever
-code the chosen branches hold. A create that fails partway is torn down by the same run.
+It runs as `mootmaker-ephemeral-github-actions-deploy`, an AWS role denied everything belonging to `test`
+and `production`. That matters because it deploys whatever code the chosen branches hold. A create that
+fails partway is torn down by the same run. The sweep runs as the release role, because its account-wide
+checks read beyond ephemeral environments. Both roles are defined in mootmaker-bootstrap-aws-accounts,
+`workload-account/github-actions-deploy-role.yaml`.
 
 ## Cost
 
