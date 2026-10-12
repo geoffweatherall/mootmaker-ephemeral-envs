@@ -2,10 +2,8 @@
 # Marks an ephemeral environment as deliberately kept, so the scheduled sweep leaves it alone.
 #
 # WHY THIS EXISTS. The sweep's age guard measures when Terraform state was last WRITTEN, not whether
-# anyone is still using the environment. During its report-only trial it flagged
-# claude-261003-bxun, kept at Geoff's request, and his own geoff-261002-wvyl as "stranded" - both
-# would have been destroyed had it been acting (mootmaker#51). This is how an environment says
-# "idle, but on purpose".
+# anyone is still using the environment, so an environment someone is testing in by hand looks
+# abandoned (mootmaker#51). This is how an environment says "idle, but on purpose".
 #
 # The marker is an object at s3://remote-state-<account>/<environment>/KEEP holding the reason, who
 # kept it and when. A reason is required: the sweep prints it on every run, alongside how long the

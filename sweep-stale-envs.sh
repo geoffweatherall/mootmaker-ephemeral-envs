@@ -4,10 +4,8 @@
 # Non-interactive counterpart to cleanup-stale-envs.sh. That script is for a human at a keyboard:
 # it lists what it finds and asks per environment. This one runs unattended on a schedule, so it
 # REPORTS BY DEFAULT and only acts when given --destroy (one exception: orphaned AppSync log
-# groups, deleted in every mode - see that section) - the design asks for report-only first,
-# graduating to automatic teardown after a clean trial period, and this is the flag that graduates
-# it. The schedule graduated 2026-10-05 (mootmaker#51): sweep.yml passes --destroy on every scheduled
-# run. Run by hand, it still reports only. Neither script replaces the other.
+# groups, deleted in every mode - see that section). sweep.yml passes --destroy on every scheduled
+# run (mootmaker#51); run by hand, it reports only. Neither script replaces the other.
 #
 # Four separate things get swept, deliberately reported apart because they mean different things:
 #
@@ -42,8 +40,7 @@
 #     At 12, every environment left up overnight would go; at 48 it survives a night and a day.
 #   - A KEEP object under the prefix (keep-env.sh, or create-ephemeral-env.sh --keep) skips the
 #     environment whatever its age, and the report lists it with its reason and how long it has been
-#     kept. The trial period showed this was needed: the sweep flagged both a deliberately kept
-#     environment and a person's own as "stranded" (mootmaker#51).
+#     kept (mootmaker#51).
 #
 # Usage: ./sweep-stale-envs.sh [--destroy] [--max-age-hours N] [--include-named-envs]
 set -euo pipefail
@@ -179,7 +176,7 @@ orphan_unknown=()     # not recognisably this project's - reported, never delete
 
 # creationTime is epoch milliseconds. A group younger than an hour may belong to a function
 # Terraform is creating right now (Lambda auto-creates the group on first invocation, and
-# SnapStart's version publish invokes init - see the design's step 12), so leave it alone.
+# SnapStart's version publish invokes init), so leave it alone.
 young_group_cutoff_ms=$(( (now_epoch - 3600) * 1000 ))
 
 while IFS=$'\t' read -r group_name created_ms; do
@@ -212,11 +209,10 @@ done < "${workdir}/loggroups.txt"
 # makes AppSync re-create the group, untracked and with never-expire retention (mootmaker#71). No
 # ordering in Terraform can fix that, because the dependency cannot be reversed.
 #
-# DELETED IN EVERY MODE, including report-only. That is a deliberate exception to the trial
-# period, agreed on mootmaker#71: whether a group is an orphan is a fact, not a judgement - its API
-# id either resolves or it does not - and a group with no API behind it can never be written to
-# legitimately again. The other categories involve inferring that an environment is abandoned,
-# which is what the trial period exists to prove.
+# DELETED IN EVERY MODE, including report-only (mootmaker#71): whether a group is an orphan is a
+# fact, not a judgement - its API id either resolves or it does not - and a group with no API
+# behind it can never be written to legitimately again. The other categories involve inferring
+# that an environment is abandoned, which is why they need --destroy.
 #
 # Every AppSync API in this account is this project's, so no name filter applies. Groups younger
 # than an hour are left alone, like the Lambda ones above: AppSync can create the group a moment
@@ -251,10 +247,9 @@ done < "${workdir}/appsync-loggroups.txt"
 # enumerating services one at a time: it is a single call, and it catches resources whose names do
 # not happen to carry the environment.
 #
-# REPORTED, NEVER DELETED - deliberately, and not as a placeholder. An empty state object is
-# unambiguous garbage; a DynamoDB table is not, and an unattended sweep has nobody watching it.
-# The design's own rollout graduates report-only checks to automatic ones after a clean trial
-# period, and this one has not had its trial yet.
+# REPORTED, NEVER DELETED. An empty state object is unambiguous garbage; a DynamoDB table is not,
+# and an unattended sweep has nobody watching it. Deleting these automatically would need its own
+# report-only trial first.
 
 orphan_resources=()
 

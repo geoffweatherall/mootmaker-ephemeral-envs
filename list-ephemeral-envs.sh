@@ -12,10 +12,9 @@
 # the refresh back to the remote state file (only `terraform apply -refresh-only` would do that).
 #
 # IMPORTANT: a nonzero `-detailed-exitcode` (2) from a refresh-only plan does NOT by itself mean
-# resources were removed - verified against a real, freshly-deployed environment while building
-# this script: 12 of its resources showed as "changed" (ACM certificate finishing async
-# validation, `tags = {}`/`layers = []` provider-schema cosmetic defaults, a Cognito pool's
-# genuinely-changing estimated_number_of_users) with zero actually missing. Terraform's own
+# resources were removed - a freshly deployed environment shows a dozen resources as "changed" (ACM
+# certificate finishing async validation, `tags = {}`/`layers = []` provider-schema cosmetic defaults, a Cognito pool's
+# genuinely-changing estimated_number_of_users) with none missing. Terraform's own
 # refresh-only output distinguishes the two cases textually - "# X has changed" (attributes differ,
 # resource still exists) versus "# X has been deleted" (refresh couldn't find it in AWS at all) -
 # so this script greps specifically for the latter rather than treating any nonzero exit code as
@@ -32,8 +31,7 @@ set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
 # component (e.g. `./mootmaker-ephemeral-envs/list-ephemeral-envs.sh` from a parent dir), colliding
-# with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
-# same bug, found and fixed there 2026-08-22.
+# with the BASH_SOURCE-based cd below.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Looking up the shared Terraform state bucket..." >&2
@@ -74,10 +72,8 @@ fi
 
 # Known project layouts: state-key project name -> sibling checkout with a deploy/terraform/ this
 # script knows how to plan against (same -var="environment=..." shape every deploy.sh/undeploy.sh
-# already uses - see mootmaker-api/mootmaker-webapp's own deploy.sh). Anything else (e.g. an ad hoc
-# mootmaker-demo-data/*/deploy.sh or mootmaker-admin-tools/*/deploy.sh run, which nests under that project rather than its own top-level
-# checkout, and has its own separate variables this script doesn't know) is deliberately not
-# guessed at - the resource count from state alone is still shown, just not cross-checked against
+# already uses - see mootmaker-api/mootmaker-webapp's own deploy.sh). Anything else, with variables
+# this script doesn't know, is deliberately not guessed at - the resource count from state alone is still shown, just not cross-checked against
 # real AWS.
 declare -A project_dirs=(
   [mootmaker-api]="${script_dir}/../mootmaker-api"
@@ -159,11 +155,9 @@ check_against_aws() {
 }
 
 # Read every state file's resource count UP FRONT, in parallel, rather than one at a time inside
-# the display loop below. This is what made the script take over three minutes (#3): with ~105
-# state objects and each `aws s3 cp` costing ~1.9s almost entirely in AWS CLI process startup
-# (Python import time, not network - measured, not assumed), the serial version spent ~200s doing
-# nothing but launching processes. The terraform refresh was never the cause; it is skipped
-# entirely for empty state, and by 2026-09 almost every leftover state file is empty.
+# the display loop below. Each `aws s3 cp` costs about 2s, almost all of it AWS CLI process
+# startup, so reading a hundred state objects one at a time takes minutes (#3). The terraform
+# refresh is skipped entirely for empty state, which most leftover state files are.
 #
 # -P 10 rather than unbounded: each job is a separate CLI process, and hundreds at once would
 # trade the startup cost for memory pressure and S3 throttling. Ten is enough that startup stops

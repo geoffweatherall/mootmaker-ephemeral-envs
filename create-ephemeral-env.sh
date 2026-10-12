@@ -4,22 +4,18 @@
 # shelling out to each project's own deploy.sh - no deploy mechanics are
 # duplicated here. mootmaker-demo-data is deployed too if --with-demo-data
 # is passed: demo data is always deployed to production, but most ephemeral
-# work does not need ~500 generated meetings, so it is opt-in here. See testing-strategy.md#ephemeral-environment-scripts
-# and mootmaker/docs/reference/testing-strategy.md#environments for the naming convention
-# and lifecycle policy this implements.
+# work does not need ~500 generated meetings, so it is opt-in here. See README.md for the naming
+# convention and the sweep.
 #
-# Does NOT touch the SES/SNS/SQS email-reading pipeline - that's separate,
-# persistent, shared infrastructure (see testing-strategy.md), not created
-# per environment.
+# Does NOT touch the shared email-reading pipeline (mootmaker-email-testing), which is persistent
+# and not created per environment.
 #
-# Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data] [--keep "<reason>"]
-#   claude (default) - Claude's own interactive dev-session environments,
-#                       reused for a whole session rather than per-task
-#   <anything else>  - an automated test suite's own run, named for exactly
-#                       which suite created it: "web-e2e"/"web-acc" for
-#                       mootmaker-webapp's e2e/acceptance suites (see their
-#                       own run.sh), "and-e2e"/"and-acc" expected once
-#                       mootmaker-android gains the same pattern
+# Usage: ./create-ephemeral-env.sh [claude|web-acc|...] [--with-demo-data] [--keep "<reason>"]
+#   claude (default) - an AI session's own environment, reused for the whole
+#                       session rather than per task
+#   <anything else>  - names what created it: a person's name, or an automated
+#                       suite such as "web-acc" (mootmaker-webapp's
+#                       acceptance/run.sh) or "and-acc" (mootmaker-android)
 #
 #   --keep "<reason>" - mark the environment as deliberately kept once it is up
 #                       (keep-env.sh), so the scheduled sweep leaves it alone
@@ -39,8 +35,7 @@ set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
 # component (e.g. `./mootmaker-ephemeral-envs/create-ephemeral-env.sh` from a parent dir), colliding
-# with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
-# same bug, found and fixed there 2026-08-22.
+# with the BASH_SOURCE-based cd below.
 
 with_demo_data=""
 keep_reason=""
@@ -58,7 +53,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -*)
       echo "Unknown option: $1" >&2
-      echo "Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...] [--with-demo-data] [--keep \"<reason>\"]" >&2
+      echo "Usage: ./create-ephemeral-env.sh [claude|web-acc|...] [--with-demo-data] [--keep \"<reason>\"]" >&2
       exit 1
       ;;
     *) positional+=("$1"); shift ;;
@@ -68,25 +63,18 @@ done
 kind="${positional[0]:-claude}"
 # kind identifies WHAT created the environment, not just that it's ephemeral - see the usage
 # comment above. Kept short (max 8 characters here) to leave room under the 22-character
-# environment-name ceiling this project's naming convention is built around (see
-# mootmaker/docs/reference/testing-strategy.md#environments) - "-YYMMDD-<rand4>" below is a fixed 12 characters,
-# so kind's own budget is 22 - 12 = 10, capped a little tighter than that for some safety margin.
+# environment-name ceiling - "-YYMMDD-<rand4>" below is a fixed 12 characters, so kind's own
+# budget is 22 - 12 = 10, capped a little tighter for some safety margin.
 if [[ ! "${kind}" =~ ^[a-z][a-z0-9-]{0,7}$ ]]; then
-  echo "Usage: ./create-ephemeral-env.sh [claude|web-e2e|web-acc|...]" >&2
+  echo "Usage: ./create-ephemeral-env.sh [claude|web-acc|...]" >&2
   echo "kind must be lowercase letters/digits/hyphens, starting with a letter, 8 characters or fewer - got: '${kind}'" >&2
   exit 1
 fi
 
-# Day-only timestamp (no time-of-day) + short random suffix - see
-# mootmaker/docs/reference/testing-strategy.md#environments for why (AWS resource-name
-# length limits once <environment>-<project-name>-... is assembled). Originally
-# included HHmm too, but real deployment testing found claude-<YYMMDD>-<HHmm>-<rand4>
-# (23 chars) is 1 character too long once combined with this project's longest
-# Lambda function name suffix (mootmaker-post-confirmation-create-person, 41
-# chars, leaves only 22 for the environment name under Lambda's 64-char limit)
-# - dropping HHmm fixes it with margin to spare (18 chars) and day-level
-# granularity is all the cleanup script needs anyway; the random suffix alone
-# already makes same-day collisions negligible.
+# Day-only timestamp + short random suffix. The 22-character ceiling comes from AWS resource-name
+# limits: the longest Lambda name, <environment>-mootmaker-post-confirmation-create-person, leaves
+# 22 characters under Lambda's 64-character limit. There is no room for a time of day, and the
+# random suffix makes same-day collisions negligible.
 # The `|| true` matters: with `set -o pipefail`, `head -c4` closing the pipe
 # early makes `tr` receive SIGPIPE, which would otherwise be treated as a
 # pipeline failure and abort the script under `set -e`.

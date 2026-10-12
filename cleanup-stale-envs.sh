@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Batch sweep for ephemeral environments left behind by an interrupted
 # session or a failed run. Discovers every recognized <kind>-<YYMMDD>-<rand4>
-# environment (e.g. "claude-260815-x7q2", "web-e2e-260819-a1b2" - see
+# environment (e.g. "claude-260815-x7q2", "web-acc-260819-a1b2" - see
 # create-ephemeral-env.sh's usage comment for the naming convention) across
 # ALL projects by listing the shared Terraform state bucket's object keys
 # and grouping by the first path segment of
 # <environment>/<project-name>/terraform.tfstate - no separate environment
-# registry needed (see testing-strategy.md
-# #ephemeral-environment-scripts and mootmaker-bootstrap-terraform's README
-# for how the shared state bucket/key layout works).
+# registry needed (see mootmaker-bootstrap-terraform's README for how the
+# shared state bucket/key layout works).
 #
 # Lists everything it finds, then asks for interactive confirmation before
 # tearing down EACH one individually, matching undeploy.sh's own
@@ -23,8 +22,7 @@ set -euo pipefail
 
 # No `cd "$(dirname "$0")"` here - it breaks when invoked via a relative path with a directory
 # component (e.g. `./mootmaker-ephemeral-envs/cleanup-stale-envs.sh` from a parent dir), colliding
-# with the BASH_SOURCE-based cd below - see mootmaker-webapp/e2e/run.sh's fuller comment on the
-# same bug, found and fixed there 2026-08-22.
+# with the BASH_SOURCE-based cd below.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 teardown_script="${script_dir}/teardown-ephemeral-env.sh"
 
